@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDU AI Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f4f8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            gap: 16px;
+            padding: 20px;
+        }
+
+        .chat-container {
+            width: 600px;
+            height: 80vh;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #4f46e5;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .chat-header h1 { font-size: 20px; }
+        .chat-header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .message.bot {
+            background: #f0f4f8;
+            color: #1a1a1a;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.user {
+            background: #4f46e5;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-input {
+            padding: 16px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 24px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .chat-input input:focus { border-color: #4f46e5; }
+
+        .chat-input button {
+            padding: 12px 24px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .chat-input button:hover { background: #4338ca; }
+
+        .typing {
+            color: #9ca3af;
+            font-size: 13px;
+            padding: 0 20px;
+            height: 20px;
+        }
+
+        .side-panel {
+            width: 260px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .panel-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            padding: 16px;
+        }
+
+        .panel-card h3 {
+            font-size: 12px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
+        }
+
+        .panel-card input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 7px;
+            outline: none;
+        }
+
+        .panel-card input:focus { border-color: #4f46e5; }
+
+        .panel-card button {
+            width: 100%;
+            padding: 9px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+
+        .panel-card button:hover { background: #4338ca; }
+
+        .panel-card button.secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .panel-card button.secondary:hover { background: #e5e7eb; }
+
+        #auth-status {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+
+        .result-box {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 12px;
+            color: #374151;
+            max-height: 140px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <h1>🎓 SDU AI Agent</h1>
+        <p>Your personal academic assistant</p>
+    </div>
+
+    <div class="chat-messages" id="messages">
+        <div class="message bot">Hi Azhar! 👋 I am your SDU AI Agent.
+
+I can help you with:
+- What homework do I have?
+- Show my schedule
+- Help me understand binary trees
+- What courses should I take?
+
+What would you like to know?</div>
+    </div>
+
+    <div class="typing" id="typing"></div>
+
+    <div class="chat-input">
+        <input type="text" id="userInput" placeholder="Ask me anything..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<div class="side-panel">
+
+    <div class="panel-card">
+        <h3>Account</h3>
+        <input type="email" id="loginEmail" placeholder="Email" />
+        <input type="password" id="loginPassword" placeholder="Password" />
+        <button onclick="doLogin()">Login</button>
+        <button class="secondary" onclick="doLogout()">Logout</button>
+        <div id="auth-status">Not logged in — chat works as guest</div>
+    </div>
+
+    <div class="panel-card">
+        <h3>Campus Location (H3)</h3>
+        <input type="number" id="latInput" placeholder="Latitude  e.g. 51.0890" step="0.0001" />
+        <input type="number" id="lngInput" placeholder="Longitude  e.g. 71.4100" step="0.0001" />
+        <button onclick="shareLocation()">Share My Location</button>
+        <button class="secondary" onclick="getFriendZones()">See Friend Zones</button>
+        <div class="result-box" id="locationResult">—</div>
+    </div>
+
+    <div class="panel-card">
+        <h3>Quick Actions</h3>
+        <button class="secondary" onclick="getAssignments()">📚 Assignments</button>
+        <button class="secondary" onclick="getSchedule()">📅 Schedule</button>
+        <button class="secondary" onclick="getHeatmap()">🗺 H3 Heatmap (admin)</button>
+        <div class="result-box" id="quickResult">—</div>
+    </div>
+
+</div>
+
+<script>
+    const API = 'http://localhost:8080';
+    const history = [];
+    let token = localStorage.getItem('sdu_token') || '';
+
+    if (token) document.getElementById('auth-status').textContent = 'Session restored ✓';
+
+    document.getElementById('userInput').addEventListener('keypress', e => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function authHeaders() {
+        const h = { 'Content-Type': 'application/json' };
+        if (token) h['Authorization'] = token;
+        return h;
+    }
+
+    async function doLogin() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        try {
+            const res = await fetch(`${API}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+            if (data.token) {
+                token = data.token;
+                localStorage.setItem('sdu_token', token);
+                document.getElementById('auth-status').textContent =
+                    `Logged in as ${data.username} (${data.role}) ✓`;
+            } else {
+                document.getElementById('auth-status').textContent = data.error || 'Login failed';
+            }
+        } catch {
+            document.getElementById('auth-status').textContent = 'Cannot reach backend';
+        }
+    }
+
+    function doLogout() {
+        token = '';
+        localStorage.removeItem('sdu_token');
+        document.getElementById('auth-status').textContent = 'Logged out';
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('userInput');
+        const message = input.value.trim();
+        if (!message) return;
+
+        addMessage(message, 'user');
+        input.value = '';
+        document.getElementById('typing').textContent = 'AI is thinking...';
+        history.push({ role: 'user', content: message });
+
+        fetch(`${API}/api/chat`, {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ message, history })
+        })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('typing').textContent = '';
+            addMessage(data.response, 'bot');
+            history.push({ role: 'assistant', content: data.response });
+        })
+        .catch(() => {
+            document.getElementById('typing').textContent = '';
+            addMessage('Sorry, something went wrong. Is the backend running?', 'bot');
+        });
+    }
+
+    function addMessage(text, sender) {
+        const messages = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.textContent = text;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function shareLocation() {
+        const lat = document.getElementById('latInput').value;
+        const lng = document.getElementById('lngInput').value;
+        if (!lat || !lng) { document.getElementById('locationResult').textContent = 'Enter lat and lng first.'; return; }
+        if (!token) { document.getElementById('locationResult').textContent = 'Login first.'; return; }
+        const res = await fetch(`${API}/location/share`, {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ lat: parseFloat(lat), lng: parseFloat(lng) })
+        });
+        const data = await res.json();
+        document.getElementById('locationResult').textContent =
+            data.h3_index ? `H3 Zone:\n${data.h3_index}` : JSON.stringify(data);
+    }
+
+    async function getFriendZones() {
+        if (!token) { document.getElementById('locationResult').textContent = 'Login first.'; return; }
+        const res = await fetch(`${API}/location/friends`, { headers: authHeaders() });
+        const data = await res.json();
+        document.getElementById('locationResult').textContent =
+            data.length ? data.map(f => `${f.friend}:\n${f.h3_zone}`).join('\n\n') : 'No friends sharing location.';
+    }
+
+    async function getAssignments() {
+        if (!token) { document.getElementById('quickResult').textContent = 'Login first.'; return; }
+        const res = await fetch(`${API}/moodle/assignments`, { headers: authHeaders() });
+        const data = await res.json();
+        const lines = Object.values(data.data || {})
+            .flatMap(c => c.assignments.map(a => `${c.course}:\n  ${a.title} (due ${a.due})`));
+        document.getElementById('quickResult').textContent = lines.join('\n') || 'No data';
+    }
+
+    async function getSchedule() {
+        if (!token) { document.getElementById('quickResult').textContent = 'Login first.'; return; }
+        const res = await fetch(`${API}/moodle/schedule`, { headers: authHeaders() });
+        const data = await res.json();
+        document.getElementById('quickResult').textContent =
+            Object.entries(data).map(([d, cs]) => `${d}:\n  ${cs.join('\n  ')}`).join('\n\n');
+    }
+
+    async function getHeatmap() {
+        if (!token) { document.getElementById('quickResult').textContent = 'Login as admin first.'; return; }
+        const res = await fetch(`${API}/analytics/heatmap`, { headers: authHeaders() });
+        const data = await res.json();
+        document.getElementById('quickResult').textContent =
+            Array.isArray(data) && data.length
+                ? data.map(r => `...${r.h3_index.slice(-8)}: ${r.user_count} user(s)`).join('\n')
+                : 'No heatmap data yet.';
+    }
+</script>
+
+</body>
+</html>
