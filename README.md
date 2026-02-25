@@ -1,6 +1,5 @@
 # SDU Academic AI Agent
 
-Unified intelligent academic assistant for Suleyman Demirel University.
 
 **INF 395 Capstone — Phase 1 + Phase 2**
 
