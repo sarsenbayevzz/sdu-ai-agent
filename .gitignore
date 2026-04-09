@@ -1,10 +1,23 @@
+# env
 .env
 *.env
+
+# python
 __pycache__/
 *.pyc
-node_modules/
-agent_venv/
 .venv/
 venv/
+agent_venv/
+
+# node
+node_modules/
+dist/
+
+# db
 *.db
+
+# editor
 .vscode/
+
+# mac
+.DS_Store
