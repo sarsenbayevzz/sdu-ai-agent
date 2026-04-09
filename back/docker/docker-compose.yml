@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sdu-ai-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DATABASE_URL=sqlite+aiosqlite:///./sdu_agent.db
+      - JWT_SECRET=${JWT_SECRET:-sdu-secret-change-me}
+      - USE_MOCK_DATA=${USE_MOCK_DATA:-true}
+      - MOODLE_URL=${MOODLE_URL:-https://moodle.sdu.edu.kz}
+      - SDU_PORTAL_URL=${SDU_PORTAL_URL:-https://my.sdu.edu.kz}
+    volumes:
+      - ./backend:/app
+      - sdu_db:/app/data
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Optional: PostgreSQL for production
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: sdu_agent
+  #     POSTGRES_USER: sdu
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+volumes:
+  sdu_db:
+  # pg_data:
