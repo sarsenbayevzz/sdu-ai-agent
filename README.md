@@ -27,11 +27,12 @@ SDU students face fragmented access to academic resources — Moodle notificatio
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | FastAPI (Python) |
+| App | Streamlit (Python) |
+| Backend logic | FastAPI-compatible Python services |
 | LLM | Groq API (LLaMA 3) |
-| Frontend | React.js |
+| Legacy frontend | React.js |
 | Styling | CSS |
-| API Docs | Swagger UI (auto-generated) |
+| API Docs | Swagger UI if running the FastAPI entry point |
 
 ---
 
@@ -39,12 +40,13 @@ SDU students face fragmented access to academic resources — Moodle notificatio
 
 ```
 sdu-ai-agent/
-├── src/
-│   ├── backend/          # FastAPI application
-│   └── frontend/         # React application
-├── docs/                 # Architecture diagrams, API docs
-├── tests/                # Unit and integration tests
-├── assets/               # Images, icons, static files
+├── back/
+│   ├── backend/
+│   │   ├── streamlit_app.py  # Streamlit application
+│   │   └── app/              # Agent, data, API, integrations
+│   └── docker/
+│       └── docker-compose.yml
+├── front/                    # Legacy React/Vite frontend
 ├── README.md
 ├── .gitignore
 └── LICENSE
@@ -60,24 +62,24 @@ sdu-ai-agent/
 - Node.js 18+
 - Groq API key
 
-### Backend
+### Streamlit App
 
 ```bash
-cd src/backend
+cd back/backend
 pip install -r requirements.txt
-cp .env.example .env   # add your GROQ_API_KEY
-uvicorn main:app --reload --port 8000
+streamlit run streamlit_app.py
 ```
 
-### Frontend
+The app will be available at `http://localhost:8501`.
 
-```bash
-cd src/frontend
-npm install
-npm run dev
+Mock login:
+
+```text
+student_id: 220103001
+password: password123
 ```
 
-The app will be available at `http://localhost:3000`.
+The React/Vite frontend and FastAPI app are still in the repository as legacy/separate entry points.
 
 ---
 

@@ -296,24 +296,63 @@ class DataService:
 
     async def get_attendance(self, student_id: str, course_code: Optional[str] = None) -> Dict:
         if USE_MOCK:
-            return self._mock_attendance(course_code)
+            return {**self._mock_attendance(course_code), "source": "mock"}
         # Try portal first (more reliable than Moodle attendance plugin)
         if self._portal_client and self._portal_client._logged_in:
             try:
                 result = await self._portal_client.get_attendance()
                 if result and result.get("courses"):
-                    return result
+                    return self._normalize_attendance(result, source="portal", course_code=course_code)
             except Exception as e:
                 logger.error(f"Portal attendance error: {e}")
         # Fallback to Moodle
         try:
             result = await self._moodle_attendance(course_code)
             if not result["courses"]:
-                return self._mock_attendance(course_code)
-            return result
+                return {**self._mock_attendance(course_code), "source": "mock"}
+            return {**result, "source": "moodle"}
         except Exception as e:
             logger.error(f"Moodle attendance error: {e}, falling back to mock")
-            return self._mock_attendance(course_code)
+            return {**self._mock_attendance(course_code), "source": "mock"}
+
+    def _normalize_attendance(self, data: Dict, source: str, course_code: Optional[str] = None) -> Dict:
+        courses = data.get("courses", [])
+        if course_code:
+            courses = [c for c in courses if str(c.get("course_code")) == str(course_code)]
+
+        enriched = []
+        for course in courses:
+            total = int(course.get("total") or 0)
+            attended = int(course.get("attended") or 0)
+            absent = int(course.get("absent") or max(total - attended, 0))
+            missed = absent
+            percentage = float(course.get("percentage") or 0)
+            status = "ok" if percentage >= 75 else ("warning" if percentage >= 50 else "critical")
+            enriched.append({
+                **course,
+                "total": total,
+                "attended": attended,
+                "missed": missed,
+                "percentage": round(percentage, 1),
+                "percentage_formatted": f"{percentage:.1f}%",
+                "status": status,
+            })
+
+        low = [a for a in enriched if a["percentage"] < 75]
+        if enriched:
+            total_classes = sum(a["total"] for a in enriched)
+            overall = sum(a["attended"] for a in enriched) / total_classes * 100 if total_classes else 0
+        else:
+            overall = 0
+
+        return {
+            **data,
+            "courses": enriched,
+            "overall_percentage": round(overall, 1),
+            "low_attendance_courses": low,
+            "has_issues": bool(low),
+            "source": source,
+        }
 
     async def _moodle_attendance(self, course_code: str = None) -> Dict:
         client = self._get_moodle_client()

@@ -1,13 +1,11 @@
-version: "3.9"
-
 services:
   backend:
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
     container_name: sdu-ai-backend
     ports:
-      - "8000:8000"
+      - "8501:8501"
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -17,10 +15,10 @@ services:
       - MOODLE_URL=${MOODLE_URL:-https://moodle.sdu.edu.kz}
       - SDU_PORTAL_URL=${SDU_PORTAL_URL:-https://my.sdu.edu.kz}
     volumes:
-      - ./backend:/app
+      - ../backend:/app
       - sdu_db:/app/data
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=8501
 
   # Optional: PostgreSQL for production
   # postgres:

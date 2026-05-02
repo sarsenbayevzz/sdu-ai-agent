@@ -1,13 +1,11 @@
-# SDU AI Agent — MVP Backend
+# SDU AI Agent — Streamlit App
 
-AI-powered academic assistant for SDU students. Uses Groq LLM with tool-calling to answer questions about schedule, assignments, and attendance.
+AI-powered academic assistant for SDU students. The current runnable app is a Streamlit interface that keeps the same core logic as the original FastAPI + React version: login, optional SDU portal 2FA, AI chat, schedule, assignments, attendance, and profile.
 
 ## Architecture
 
 ```
-Telegram Mini App (React)
-        ↓
-  FastAPI Backend
+Streamlit App
         ↓
   ┌─────────────────────────┐
   │  SDU AI Agent (Groq)    │
@@ -40,16 +38,29 @@ cp .env.example .env
 pip install -r requirements.txt
 ```
 
-### 3. Run the server
+### 3. Run the Streamlit app
+
+```bash
+streamlit run streamlit_app.py
+```
+
+### 4. Open the app
+
+```
+http://localhost:8501
+```
+
+Mock login:
+
+```
+student_id: 220103001
+password: password123
+```
+
+The previous FastAPI API is still available in `app/main.py` if you want to run it separately:
 
 ```bash
 uvicorn app.main:app --reload
-```
-
-### 4. Open API docs
-
-```
-http://localhost:8000/docs
 ```
 
 ---
@@ -156,6 +167,7 @@ backend/
 │   │   └── database.py      # SQLAlchemy models + DB setup
 │   └── schemas/
 │       └── schemas.py       # Pydantic schemas
+├── streamlit_app.py         # Streamlit app entry point
 ├── telegram_bot.py          # Telegram bot (Mini App launcher)
 ├── test_local.py            # Local test script
 ├── requirements.txt
@@ -168,6 +180,7 @@ backend/
 ## Development Roadmap
 
 ### ✅ Done (this MVP)
+- Streamlit app with login, chat, schedule, assignments, attendance, profile
 - FastAPI backend with all endpoints
 - Groq AI agent with 6 tools
 - Mock data for SDU (schedule, assignments, attendance)
@@ -206,7 +219,13 @@ password: password123
 ## Docker
 
 ```bash
-cp backend/.env.example backend/.env
+cd back/docker
 # Edit .env
-docker-compose -f docker/docker-compose.yml up --build
+docker compose up --build
+```
+
+Docker exposes the Streamlit app at:
+
+```
+http://localhost:8501
 ```
