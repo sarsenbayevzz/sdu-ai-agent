@@ -1,4 +1,5 @@
 import asyncio
+import html
 import os
 import sys
 from collections.abc import Mapping
@@ -125,6 +126,49 @@ def data_service() -> DataService:
         moodle_token=moodle_token(),
         portal_client=PORTAL_SESSIONS.get(student_id()),
     )
+
+
+class CachedDataService:
+    """Read-only DataService facade for chat, backed by Streamlit page cache."""
+
+    def __init__(self, cache: dict):
+        self.cache = cache
+
+    async def get_assignments(self, student_id: str, days: int = 30, include_submitted: bool = False):
+        cached = self.cache.get("assignments", {})
+        assignments = [
+            item for item in cached.get("assignments", [])
+            if item.get("days_left", 999) <= days and (include_submitted or not item.get("submitted"))
+        ]
+        return {**cached, "assignments": assignments, "count": len(assignments), "days_range": days}
+
+    async def get_next_class(self, student_id: str):
+        return self.cache.get("next_class", {}) or {"message": "No upcoming classes found"}
+
+    async def get_schedule_for_day(self, student_id: str, day: str | None = None):
+        now = datetime.now()
+        target_day = day or now.strftime("%A")
+        if target_day == "tomorrow":
+            target_day = DAYS[(DAYS.index(now.strftime("%A")) + 1) % len(DAYS)] if now.strftime("%A") in DAYS else "Monday"
+        schedule = self.cache.get("schedule", {})
+        classes = sorted(schedule.get(target_day, []), key=lambda x: x.get("start_time", ""))
+        return {
+            "day": target_day,
+            "date": now.strftime("%Y-%m-%d"),
+            "classes_count": len(classes),
+            "classes": classes,
+            "has_classes": bool(classes),
+        }
+
+    async def get_full_schedule(self, student_id: str):
+        return {"schedule": self.cache.get("schedule", {})}
+
+    async def get_attendance(self, student_id: str, course_code: str | None = None):
+        data = self.cache.get("attendance", {})
+        if not course_code:
+            return data
+        courses = [c for c in data.get("courses", []) if str(c.get("course_code")) == str(course_code)]
+        return {**data, "courses": courses}
 
 
 def clear_page_cache():
@@ -372,6 +416,7 @@ def inject_css():
             max-width: 86%;
             line-height: 1.55;
             white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .chat-user {
@@ -387,6 +432,12 @@ def inject_css():
             background: var(--bg-elevated);
             border: 1px solid var(--border);
             color: var(--text-primary);
+        }
+
+        .chat-meta {
+            margin: -8px 0 12px 42px;
+            color: var(--text-muted);
+            font-size: 11px;
         }
 
         .bottom-nav {
@@ -586,7 +637,11 @@ def seed_chat():
         return
     student = st.session_state.get("student") or {}
     first_name = (student.get("name") or "").split(" ")[0]
-    greeting = f"Привет{', ' + first_name if first_name else ''}!\n\nЯ твой академический помощник SDU. Спроси меня про расписание, задания, дедлайны или посещаемость."
+    greeting = (
+        f"Привет{', ' + first_name if first_name else ''}!\n\n"
+        "Я помогу быстро разобраться с учёбой: расписание, следующая пара, дедлайны, задания и посещаемость. "
+        "Данные беру из уже загруженного кэша, поэтому переключение страниц и чат не должны заново парсить портал."
+    )
     st.session_state.chat_messages = [{"role": "assistant", "text": greeting}]
 
 
@@ -616,25 +671,58 @@ def render_chat():
     seed_chat()
 
     suggestions = [
-        "Какие у меня задания на этой неделе?",
         "Какая следующая пара?",
+        "Что срочно сдать?",
         "Моё расписание сегодня",
-        "Какая у меня посещаемость?",
+        "Какие риски по посещаемости?",
+        "Покажи расписание на неделю",
+        "Какие задания на этой неделе?",
     ]
 
-    if len(st.session_state.chat_messages) <= 1:
-        cols = st.columns(2)
-        for index, text in enumerate(suggestions):
-            if cols[index % 2].button(text, key=f"suggestion_{index}"):
-                send_message(text)
-                st.rerun()
+    cache = get_page_cache()
+    attendance_source = cache.get("attendance", {}).get("source", "unknown")
+    total_assignments = len(cache.get("assignments", {}).get("assignments", []))
+    st.markdown(
+        f"""
+        <div class="card" style="padding:12px 14px;">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+                <div>
+                    <div style="font-size:13px;font-weight:700;">Контекст чата готов</div>
+                    <div class="secondary" style="font-size:12px;margin-top:3px;">
+                        Заданий в кэше: {total_assignments} · посещаемость: {attendance_source}
+                    </div>
+                </div>
+                <div>{badge("cache", "green")}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_clear, col_hint = st.columns([1, 2])
+    if col_clear.button("Очистить чат"):
+        st.session_state.chat_messages = []
+        seed_chat()
+        st.rerun()
+    col_hint.caption("Подсказки ниже отвечают по загруженным данным без повторного парсинга.")
+
+    cols = st.columns(2)
+    for index, text in enumerate(suggestions):
+        if cols[index % 2].button(text, key=f"suggestion_{index}"):
+            send_message(text)
+            st.rerun()
 
     for message in st.session_state.chat_messages:
         cls = "chat-user" if message["role"] == "user" else "chat-assistant"
         st.markdown(
-            f'<div class="chat-bubble {cls}">{message["text"]}</div>',
+            f'<div class="chat-bubble {cls}">{html.escape(message["text"])}</div>',
             unsafe_allow_html=True,
         )
+        if message.get("tool_used"):
+            st.markdown(
+                f'<div class="chat-meta">tool: {html.escape(message["tool_used"])}</div>',
+                unsafe_allow_html=True,
+            )
 
     prompt = st.chat_input("Напиши вопрос...")
     if prompt:
@@ -644,7 +732,7 @@ def render_chat():
 
 def send_message(text: str):
     st.session_state.chat_messages.append({"role": "user", "text": text})
-    ds = data_service()
+    ds = CachedDataService(get_page_cache())
     agent = SDUAgent(ds)
     history = [
         {"role": m["role"], "message": m["text"]}
@@ -659,6 +747,7 @@ def send_message(text: str):
             {
                 "role": "assistant",
                 "text": result.get("response") or "Не удалось получить ответ.",
+                "tool_used": result.get("tool_used"),
             }
         )
     except Exception as exc:

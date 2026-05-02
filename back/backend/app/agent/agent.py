@@ -187,18 +187,23 @@ class SDUAgent:
         self,
         message: str,
         student_id: str,
-        chat_history: List[Dict] = []
+        chat_history: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """
         Main entry point for processing a student message.
         Returns: { response: str, tool_used: str | None, data: dict | None }
         """
-        if not self.client:
+        message = (message or "").strip()
+        chat_history = chat_history or []
+        if not message:
             return {
-                "response": "AI service is not configured. Please set GROQ_API_KEY.",
+                "response": "Напиши вопрос про расписание, задания, дедлайны или посещаемость.",
                 "tool_used": None,
                 "data": None
             }
+
+        if not self.client:
+            return await self._rule_based_response(message, student_id)
 
         now = datetime.now()
         system = SYSTEM_PROMPT.format(
@@ -217,15 +222,21 @@ class SDUAgent:
         tool_used = None
         tool_data = None
 
-        # First LLM call — may request tool use
-        response = await self.client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            max_tokens=1024,
-            temperature=0.3,
-        )
+        try:
+            # First LLM call — may request tool use
+            response = await self.client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="auto",
+                max_tokens=1024,
+                temperature=0.3,
+            )
+        except Exception as e:
+            logger.error(f"Groq first call error: {e}")
+            fallback = await self._rule_based_response(message, student_id)
+            fallback["response"] = f"{fallback['response']}\n\nAI временно недоступен, поэтому я ответил по данным приложения."
+            return fallback
 
         response_message = response.choices[0].message
 
@@ -233,7 +244,10 @@ class SDUAgent:
         if response_message.tool_calls:
             tool_call = response_message.tool_calls[0]
             tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments or "{}")
+            try:
+                tool_args = json.loads(tool_call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                tool_args = {}
 
             logger.info(f"Agent calling tool: {tool_name} with args: {tool_args}")
             tool_used = tool_name
@@ -264,17 +278,21 @@ class SDUAgent:
             })
 
             # Second LLM call — generate human-readable response
-            final_response = await self.client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=messages,
-                max_tokens=512,
-                temperature=0.4,
-            )
-            answer = final_response.choices[0].message.content
+            try:
+                final_response = await self.client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=messages,
+                    max_tokens=512,
+                    temperature=0.4,
+                )
+                answer = final_response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"Groq final call error: {e}")
+                answer = self._format_tool_response(tool_name, tool_result)
 
         else:
             # No tool needed — direct answer
-            answer = response_message.content
+            answer = response_message.content or "Я могу помочь с расписанием, заданиями, дедлайнами и посещаемостью."
 
         return {
             "response": answer,
@@ -319,3 +337,115 @@ class SDUAgent:
         except Exception as e:
             logger.error(f"Tool execution error ({tool_name}): {e}")
             return {"error": str(e)}
+
+    async def _rule_based_response(self, message: str, student_id: str) -> Dict[str, Any]:
+        """Deterministic fallback for MVP reliability when LLM is unavailable."""
+        intent, args = self._detect_intent(message)
+        if not intent:
+            return {
+                "response": (
+                    "Я могу быстро помочь с академическими данными:\n"
+                    "• расписание сегодня, завтра или на неделю\n"
+                    "• следующая пара\n"
+                    "• задания и дедлайны\n"
+                    "• посещаемость и рисковые курсы\n\n"
+                    "Например: «Какая следующая пара?» или «Что по посещаемости?»"
+                ),
+                "tool_used": None,
+                "data": None,
+            }
+
+        data = await self._execute_tool(intent, args, student_id)
+        return {
+            "response": self._format_tool_response(intent, data),
+            "tool_used": intent,
+            "data": data,
+        }
+
+    def _detect_intent(self, message: str):
+        text = message.lower()
+        if any(word in text for word in ("посещ", "attendance", "absence", "absent", "пропуск", "риск", "қатысу")):
+            return "get_attendance", {}
+        if any(word in text for word in ("след", "next class", "next lesson", "ближай", "келесі")):
+            return "get_next_class", {}
+        if any(word in text for word in ("завтра", "tomorrow", "ертең")):
+            return "get_schedule_tomorrow", {}
+        if any(word in text for word in ("сегодня", "today", "бүгін")):
+            return "get_schedule_today", {}
+        if any(word in text for word in ("недел", "week", "расписание", "schedule", "кесте")):
+            return "get_full_schedule", {}
+        if any(word in text for word in ("дедлайн", "deadline", "due", "сроч", "urgent")):
+            return "get_deadlines", {"days": 14}
+        if any(word in text for word in ("задан", "assignment", "homework", "дз", "тапсыр", "сдать", "сдавать", "сдач", "домаш")):
+            days = 7 if any(w in text for w in ("week", "недел", "апта")) else 30
+            return "get_assignments", {"days": days, "include_submitted": False}
+        return None, {}
+
+    def _format_tool_response(self, tool_name: str, data: Any) -> str:
+        if not data:
+            return "Данных пока нет. Попробуй нажать «Обновить данные»."
+        if isinstance(data, dict) and data.get("error"):
+            return f"Не получилось получить данные: {data['error']}"
+
+        if tool_name in {"get_assignments", "get_deadlines"}:
+            assignments = data.get("assignments", []) if isinstance(data, dict) else []
+            if not assignments:
+                return "Активных заданий в выбранном периоде нет."
+            lines = ["Ближайшие задания:"]
+            for item in assignments[:8]:
+                status = "сдано" if item.get("submitted") else f"через {item.get('days_left', '?')} дн."
+                lines.append(f"• {item.get('title', 'Assignment')} — {item.get('course_name', '')}, {status}")
+            return "\n".join(lines)
+
+        if tool_name == "get_next_class":
+            if not data.get("course_name"):
+                return data.get("message", "Ближайших пар не найдено.")
+            when = "сегодня" if data.get("is_today") else "завтра" if data.get("is_tomorrow") else data.get("day", "")
+            return (
+                f"Следующая пара {when}:\n"
+                f"{data.get('course_name')} ({data.get('class_type', 'Class')})\n"
+                f"{data.get('start_time')}–{data.get('end_time')}, аудитория {data.get('room') or 'не указана'}\n"
+                f"Преподаватель: {data.get('teacher') or 'не указан'}"
+            )
+
+        if tool_name in {"get_schedule_today", "get_schedule_tomorrow", "get_schedule_by_day"}:
+            classes = data.get("classes", []) if isinstance(data, dict) else []
+            if not classes:
+                return f"На {data.get('day', 'этот день')} пар нет."
+            lines = [f"Расписание на {data.get('day', 'день')}:"]
+            for cls in classes:
+                lines.append(f"• {cls.get('start_time')}–{cls.get('end_time')} {cls.get('course_name')} · {cls.get('room', '')}")
+            return "\n".join(lines)
+
+        if tool_name == "get_full_schedule":
+            schedule = data.get("schedule", {}) if isinstance(data, dict) else {}
+            if not schedule:
+                return "Расписание пока не загружено."
+            lines = ["Расписание на неделю:"]
+            for day, classes in schedule.items():
+                if not classes:
+                    continue
+                lines.append(f"\n{day}:")
+                for cls in classes[:5]:
+                    lines.append(f"• {cls.get('start_time')}–{cls.get('end_time')} {cls.get('course_name')} · {cls.get('room', '')}")
+            return "\n".join(lines)
+
+        if tool_name == "get_attendance":
+            courses = data.get("courses", []) if isinstance(data, dict) else []
+            if not courses:
+                return "Данных по посещаемости пока нет."
+            overall = data.get("overall_percentage", 0)
+            low = [c for c in courses if c.get("percentage", 100) < 75]
+            lines = [f"Общая посещаемость: {overall:.1f}%"]
+            if low:
+                lines.append("Курсы в зоне риска:")
+                for course in low[:6]:
+                    lines.append(
+                        f"• {course.get('course_name')} — {course.get('percentage', 0):.1f}% "
+                        f"({course.get('attended', 0)}/{course.get('total', 0)})"
+                    )
+            else:
+                lines.append("Критичных курсов ниже 75% нет.")
+            return "\n".join(lines)
+
+        return "Данные получены, но я пока не умею красиво форматировать этот тип ответа."
