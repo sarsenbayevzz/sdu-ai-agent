@@ -74,10 +74,18 @@ DAY_FULL = {
 
 def run_async(coro):
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        loop = st.session_state.get("_async_loop")
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop()
+            st.session_state["_async_loop"] = loop
+        return loop.run_until_complete(coro)
 
+    # Streamlit normally runs this script synchronously, but keep a fallback for
+    # environments that already have a running loop. This path cannot reuse
+    # portal clients created on the session loop, so app data calls should not
+    # normally reach it.
     new_loop = asyncio.new_event_loop()
     try:
         return new_loop.run_until_complete(coro)
