@@ -104,6 +104,7 @@ class DataService:
                         result["grant_type"] = profile.get("grant_type", "")
                         result["email"] = profile.get("email", result["email"])
                         result["portal_photo_url"] = profile.get("photo_url", "")
+                        result["portal_photo_data_uri"] = profile.get("photo_data_uri", "")
                     # Keep portal client alive for schedule scraping
                     PORTAL_SESSIONS[student_id] = portal
             except Exception as e:

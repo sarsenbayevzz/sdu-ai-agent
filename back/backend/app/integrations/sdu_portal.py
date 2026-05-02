@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from typing import Dict, List, Optional
 import logging
 import os
+import base64
+from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
 SDU_PORTAL_URL = os.getenv("SDU_PORTAL_URL", "https://my.sdu.edu.kz")
@@ -264,6 +266,44 @@ class SDUPortalClient:
             "term": f"{year}-{int(year)+1} term {term}",
         }
 
+    def _find_profile_photo_src(self, soup: BeautifulSoup) -> str:
+        """Find the most likely student photo URL in portal HTML."""
+        candidates = []
+
+        exact_title = soup.find("img", {"title": self.student_id})
+        if exact_title:
+            candidates.append(exact_title)
+
+        for img in soup.find_all("img"):
+            src = img.get("src", "")
+            title = img.get("title", "")
+            alt = img.get("alt", "")
+            class_text = " ".join(img.get("class", []))
+            haystack = " ".join([src, title, alt, class_text]).lower()
+            if self.student_id in haystack or any(key in haystack for key in ("photo", "avatar", "student", "profile")):
+                candidates.append(img)
+
+        for img in candidates:
+            src = img.get("src", "").strip()
+            if src:
+                return urljoin(SDU_PORTAL_URL + "/", src)
+        return ""
+
+    async def _fetch_photo_data_uri(self, photo_url: str) -> str:
+        """Download protected portal photo with the authenticated session."""
+        if not photo_url:
+            return ""
+        try:
+            resp = await self.client.get(photo_url, headers={"Referer": f"{SDU_PORTAL_URL}/index.php"})
+            content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+            if resp.status_code != 200 or not resp.content or not content_type.startswith("image/"):
+                return ""
+            encoded = base64.b64encode(resp.content).decode("ascii")
+            return f"data:{content_type};base64,{encoded}"
+        except Exception as e:
+            logger.error(f"SDU portal photo fetch error: {e}")
+            return ""
+
     async def get_profile(self) -> Optional[Dict]:
         """Scrape student profile from home page."""
         if not self._logged_in:
@@ -272,17 +312,14 @@ class SDUPortalClient:
             resp = await self.client.get(f"{SDU_PORTAL_URL}/index.php")
             soup = BeautifulSoup(resp.text, "html.parser")
 
-            # Photo URL
-            photo_tag = soup.find("img", {"title": self.student_id})
-            photo_url = ""
-            if photo_tag and photo_tag.get("src"):
-                src = photo_tag["src"]
-                photo_url = f"{SDU_PORTAL_URL}/{src}" if not src.startswith("http") else src
+            photo_url = self._find_profile_photo_src(soup)
+            photo_data_uri = await self._fetch_photo_data_uri(photo_url)
 
             # Parse table rows with student info
             profile = {
                 "student_id": self.student_id,
                 "photo_url": photo_url,
+                "photo_data_uri": photo_data_uri,
             }
 
             rows = soup.select("table.clsTbl tr")

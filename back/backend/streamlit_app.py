@@ -570,6 +570,7 @@ def render_login():
                         "grant_type": profile.get("grant_type", current.get("grant_type", "")),
                         "email": profile.get("email", current.get("email", "")),
                         "portal_photo_url": profile.get("photo_url", current.get("portal_photo_url", "")),
+                        "portal_photo_data_uri": profile.get("photo_data_uri", current.get("portal_photo_data_uri", "")),
                     }
                     st.session_state.needs_2fa = False
                     seed_chat()
@@ -893,7 +894,10 @@ def render_profile():
     student = st.session_state.get("student") or {}
     name = student.get("name") or "Student"
     initials = "".join(part[:1] for part in name.split()[:2]).upper() or "?"
-    photo = student.get("portal_photo_url") or student.get("avatar") or ""
+    embedded_photo = student.get("portal_photo_data_uri") or ""
+    external_photo = student.get("portal_photo_url") or student.get("avatar") or ""
+    photo = embedded_photo or external_photo
+    photo_status = "встроено" if embedded_photo else "ссылка найдена" if external_photo else "не найдено"
 
     avatar = (
         f'<img src="{photo}" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid rgba(79,124,255,.38);">'
@@ -916,6 +920,7 @@ def render_profile():
             {info_row("Email", student.get("email"))}
             {info_row("Дата рождения", student.get("birth_date"))}
             {info_row("Грант", student.get("grant_type"))}
+            {info_row("Фото", photo_status)}
         </div>
         """,
         unsafe_allow_html=True,
