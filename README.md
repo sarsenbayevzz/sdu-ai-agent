@@ -72,6 +72,16 @@ streamlit run streamlit_app.py
 
 The app will be available at `http://localhost:8501`.
 
+For Streamlit Cloud, do not commit `.env`. Add these in **Manage app -> Settings -> Secrets**:
+
+```toml
+GROQ_API_KEY = "your_groq_key"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+MOODLE_URL = "https://moodle.sdu.edu.kz"
+SDU_PORTAL_URL = "https://my.sdu.edu.kz"
+USE_MOCK_DATA = "false"
+```
+
 Mock login:
 
 ```text

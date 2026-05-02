@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,12 +10,41 @@ import streamlit as st
 from dotenv import load_dotenv
 
 
+st.set_page_config(
+    page_title="SDU AI Assistant",
+    page_icon="🎓",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parents[1]
-for path in (BASE_DIR, PROJECT_ROOT / "back" / "docker", PROJECT_ROOT, Path.cwd()):
-    env_file = path / ".env"
-    if env_file.exists():
-        load_dotenv(env_file, override=False)
+
+
+def load_local_env_files():
+    for path in (BASE_DIR, PROJECT_ROOT / "back" / "docker", PROJECT_ROOT, Path.cwd()):
+        env_file = path / ".env"
+        if env_file.exists():
+            load_dotenv(env_file, override=False)
+
+
+def load_streamlit_secrets():
+    """Expose Streamlit Cloud secrets as environment variables before app imports."""
+    try:
+        secrets = dict(st.secrets)
+    except Exception:
+        return
+
+    for key, value in secrets.items():
+        if isinstance(value, Mapping):
+            for nested_key, nested_value in value.items():
+                os.environ.setdefault(str(nested_key), str(nested_value))
+        else:
+            os.environ.setdefault(str(key), str(value))
+
+
+load_local_env_files()
+load_streamlit_secrets()
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -145,12 +175,7 @@ def render_refresh_bar():
 
 
 def page_config():
-    st.set_page_config(
-        page_title="SDU AI Assistant",
-        page_icon="🎓",
-        layout="centered",
-        initial_sidebar_state="collapsed",
-    )
+    pass
 
 
 def inject_css():
