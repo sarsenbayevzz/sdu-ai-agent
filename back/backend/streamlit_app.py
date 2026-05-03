@@ -688,16 +688,21 @@ def inject_css():
             backdrop-filter: blur(14px);
         }
 
-        /* кнопки */
-        .top-nav button {
-            border-radius: 12px !important;
-            background: var(--bg-elevated) !important;
-            border: 1px solid var(--border) !important;
+        .nav-btn {
+            flex: 1;
+            border-radius: 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-weight: 600;
+            padding: 10px 6px;
+            cursor: pointer;
         }
 
-        /* отступ */
-        .main .block-container {
-            margin-top: 90px !important;
+        .nav-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
         }
 
         .stRadio label {
@@ -900,15 +905,27 @@ def seed_chat():
 
 def nav():
     labels = ["Chat", "Schedule", "Assignments", "Attendance", "Profile"]
+    current = st.session_state.get("nav", "Chat")
 
-    st.markdown('<div class="top-nav">', unsafe_allow_html=True)
+    buttons_html = ""
+    for label in labels:
+        active = "active" if label == current else ""
+        buttons_html += f"""
+        <button class="nav-btn {active}" onclick="window.location.search='?nav={label}'">
+            {label}
+        </button>
+        """
 
-    cols = st.columns(len(labels))
-    for i, label in enumerate(labels):
-        if cols[i].button(label, use_container_width=True):
-            st.session_state.nav = label
+    st.markdown(f"""
+    <div class="top-nav">
+        {buttons_html}
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    # читаем из URL
+    nav_from_url = st.query_params.get("nav")
+    if nav_from_url:
+        st.session_state.nav = nav_from_url
 
     return st.session_state.get("nav", "Chat")
 
