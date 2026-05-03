@@ -684,11 +684,11 @@ def inject_css():
             box-shadow: 0 8px 30px rgba(0,0,0,.32);
         }
 
-        .stRadio [role="radiogroup"] {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 6px;
-        }
+        # .stRadio [role="radiogroup"] {
+        #     display: grid;
+        #     grid-template-columns: repeat(5, minmax(0, 1fr));
+        #     gap: 6px;
+        # }
 
         .stRadio label {
             background: var(--bg-elevated);
