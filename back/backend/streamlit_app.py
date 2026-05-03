@@ -1131,7 +1131,7 @@ def render_assignments():
         opacity = ".62" if submitted else "1"
         st.markdown(
             f"""
-            <div class="assignment-card" style="border-color:{border};opacity:{opacity};">
+            <div class="assignment-card" style="border-color:{border};opacity:{opacity};margin-top:12px;">
                 <div style="display:flex;justify-content:space-between;gap:12px;">
                     <div>
                         <div style="font-size:16px;font-weight:700;">{item.get("title", "Assignment")}</div>
