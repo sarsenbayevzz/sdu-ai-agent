@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from app.schemas.schemas import ChatRequest, ChatResponse
 from app.agent.agent import SDUAgent
-from app.agent.data_service import DataService
+from app.agent.data_service import DataService, PORTAL_SESSIONS
 from app.api.auth import get_current_student
 from typing import Optional
 import logging
@@ -26,7 +26,10 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     moodle_token = extract_moodle_token(authorization)
-    ds = DataService(moodle_token=moodle_token)
+    ds = DataService(
+        moodle_token=moodle_token,
+        portal_client=PORTAL_SESSIONS.get(request.student_id),
+    )
     agent = SDUAgent(ds)
 
     try:

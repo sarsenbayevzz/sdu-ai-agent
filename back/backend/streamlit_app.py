@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,7 @@ from app.agent.data_service import DataService, PORTAL_SESSIONS
 
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 DAY_LABELS = {
     "Monday": "Mon",
     "Tuesday": "Tue",
@@ -217,41 +218,184 @@ class CachedDataService:
     def __init__(self, cache: dict):
         self.cache = cache
 
+    def _parse_datetime(self, value: Any) -> datetime | None:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%b %d, %Y"):
+            try:
+                return datetime.strptime(str(value).split("+")[0], fmt)
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    def _resolve_day(self, day: str | None):
+        now = datetime.now()
+        if not day:
+            return now.strftime("%A"), now.strftime("%Y-%m-%d")
+
+        normalized = str(day).strip()
+        lowered = normalized.lower()
+        if lowered in {"today", "сегодня", "бүгін"}:
+            return now.strftime("%A"), now.strftime("%Y-%m-%d")
+        if lowered in {"tomorrow", "завтра", "ертең"}:
+            target = now + timedelta(days=1)
+            return target.strftime("%A"), target.strftime("%Y-%m-%d")
+
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m"):
+            try:
+                parsed = datetime.strptime(
+                    f"{normalized}.{now.year}" if fmt == "%d.%m" else normalized,
+                    "%d.%m.%Y" if fmt == "%d.%m" else fmt,
+                )
+                return parsed.strftime("%A"), parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        aliases = {
+            "monday": "Monday", "mon": "Monday", "понедельник": "Monday",
+            "tuesday": "Tuesday", "tue": "Tuesday", "вторник": "Tuesday",
+            "wednesday": "Wednesday", "wed": "Wednesday", "среда": "Wednesday", "среду": "Wednesday",
+            "thursday": "Thursday", "thu": "Thursday", "четверг": "Thursday",
+            "friday": "Friday", "fri": "Friday", "пятница": "Friday", "пятницу": "Friday",
+            "saturday": "Saturday", "sat": "Saturday", "суббота": "Saturday",
+            "sunday": "Sunday", "sun": "Sunday", "воскресенье": "Sunday",
+        }
+        target_day = aliases.get(lowered, normalized.capitalize())
+        if target_day in DAY_ORDER:
+            today_idx = DAY_ORDER.index(now.strftime("%A"))
+            target_idx = DAY_ORDER.index(target_day)
+            days_ahead = (target_idx - today_idx) % 7
+            return target_day, (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+        return now.strftime("%A"), now.strftime("%Y-%m-%d")
+
+    def _cached_schedule(self) -> dict:
+        return self.cache.get("schedule") or {}
+
+    def _normalize_assignments(self, items: list[dict], days: int, include_submitted: bool) -> list[dict]:
+        now = datetime.now()
+        result = []
+        for item in items:
+            submitted = bool(item.get("submitted"))
+            if submitted and not include_submitted:
+                continue
+
+            deadline = self._parse_datetime(item.get("deadline")) or self._parse_datetime(item.get("deadline_formatted"))
+            days_left = item.get("days_left")
+            if deadline:
+                days_left = max(0, (deadline.date() - now.date()).days)
+            if days_left is None:
+                days_left = 999
+            if int(days_left) > days:
+                continue
+
+            result.append({
+                **item,
+                "days_left": int(days_left),
+                "urgent": int(days_left) <= 2 and not submitted,
+            })
+
+        return sorted(result, key=lambda item: (item.get("days_left", 999), item.get("deadline", "")))
+
     async def get_assignments(self, student_id: str, days: int = 30, include_submitted: bool = False):
         cached = self.cache.get("assignments", {})
-        assignments = [
-            item for item in cached.get("assignments", [])
-            if item.get("days_left", 999) <= days and (include_submitted or not item.get("submitted"))
-        ]
-        return {**cached, "assignments": assignments, "count": len(assignments), "days_range": days}
+        assignments = self._normalize_assignments(cached.get("assignments", []), days, include_submitted)
+        return {
+            **cached,
+            "assignments": assignments,
+            "count": len(assignments),
+            "days_range": days,
+            "from_page_cache": True,
+        }
 
     async def get_next_class(self, student_id: str):
-        return self.cache.get("next_class", {}) or {"message": "No upcoming classes found"}
+        now = datetime.now()
+        current_day = now.strftime("%A")
+        current_time = now.strftime("%H:%M")
+        current_idx = DAY_ORDER.index(current_day) if current_day in DAY_ORDER else 0
+        schedule = self._cached_schedule()
+
+        for day_offset in range(7):
+            day = DAY_ORDER[(current_idx + day_offset) % 7]
+            classes = sorted(schedule.get(day, []), key=lambda item: item.get("start_time", ""))
+            for cls in classes:
+                start_time = cls.get("start_time", "")
+                if day_offset == 0 and start_time <= current_time:
+                    continue
+                try:
+                    class_dt = (now + timedelta(days=day_offset)).replace(
+                        hour=int(start_time.split(":")[0]),
+                        minute=int(start_time.split(":")[1]),
+                        second=0,
+                        microsecond=0,
+                    )
+                    minutes_until = int((class_dt - now).total_seconds() / 60)
+                except (ValueError, IndexError):
+                    minutes_until = None
+                return {
+                    **cls,
+                    "day": day,
+                    "minutes_until": minutes_until,
+                    "is_today": day_offset == 0,
+                    "is_tomorrow": day_offset == 1,
+                    "from_page_cache": True,
+                }
+
+        cached_next = self.cache.get("next_class", {})
+        if cached_next and cached_next.get("course_name"):
+            return {**cached_next, "from_page_cache": True}
+        return {"message": "No upcoming classes found", "from_page_cache": True}
 
     async def get_schedule_for_day(self, student_id: str, day: str | None = None):
-        now = datetime.now()
-        target_day = day or now.strftime("%A")
-        if target_day == "tomorrow":
-            target_day = DAYS[(DAYS.index(now.strftime("%A")) + 1) % len(DAYS)] if now.strftime("%A") in DAYS else "Monday"
-        schedule = self.cache.get("schedule", {})
+        target_day, target_date = self._resolve_day(day)
+        schedule = self._cached_schedule()
         classes = sorted(schedule.get(target_day, []), key=lambda x: x.get("start_time", ""))
         return {
             "day": target_day,
-            "date": now.strftime("%Y-%m-%d"),
+            "date": target_date,
             "classes_count": len(classes),
             "classes": classes,
             "has_classes": bool(classes),
+            "from_page_cache": True,
         }
 
     async def get_full_schedule(self, student_id: str):
-        return {"schedule": self.cache.get("schedule", {})}
+        schedule = self._cached_schedule()
+        ordered = {
+            day: sorted(schedule.get(day, []), key=lambda item: item.get("start_time", ""))
+            for day in DAY_ORDER
+            if day in schedule or day != "Sunday"
+        }
+        return {"schedule": ordered, "from_page_cache": True}
 
     async def get_attendance(self, student_id: str, course_code: str | None = None):
         data = self.cache.get("attendance", {})
         if not course_code:
-            return data
-        courses = [c for c in data.get("courses", []) if str(c.get("course_code")) == str(course_code)]
-        return {**data, "courses": courses}
+            return {**data, "from_page_cache": True}
+
+        query = str(course_code).lower()
+        courses = [
+            c for c in data.get("courses", [])
+            if query in str(c.get("course_code", "")).lower()
+            or query in str(c.get("course_name", "")).lower()
+        ]
+        low = [c for c in courses if c.get("percentage", 100) < 75]
+        total_classes = sum(int(c.get("total") or 0) for c in courses)
+        attended = sum(int(c.get("attended") or 0) for c in courses)
+        overall = round(attended / total_classes * 100, 1) if total_classes else 0
+        return {
+            **data,
+            "courses": courses,
+            "overall_percentage": overall,
+            "low_attendance_courses": low,
+            "has_issues": bool(low),
+            "from_page_cache": True,
+        }
 
 
 def clear_page_cache():

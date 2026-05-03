@@ -242,40 +242,45 @@ class SDUAgent:
 
         # Handle tool calls
         if response_message.tool_calls:
-            tool_call = response_message.tool_calls[0]
-            tool_name = tool_call.function.name
-            try:
-                tool_args = json.loads(tool_call.function.arguments or "{}")
-            except json.JSONDecodeError:
-                tool_args = {}
-
-            logger.info(f"Agent calling tool: {tool_name} with args: {tool_args}")
-            tool_used = tool_name
-
-            # Execute the tool
-            tool_result = await self._execute_tool(tool_name, tool_args, student_id)
-            tool_data = tool_result
-
-            # Add tool call + result to messages
+            tool_results = []
+            tool_names = []
             messages.append({
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [
                     {
-                        "id": tool_call.id,
+                        "id": call.id,
                         "type": "function",
                         "function": {
-                            "name": tool_name,
-                            "arguments": tool_call.function.arguments
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
                         }
                     }
+                    for call in response_message.tool_calls
                 ]
             })
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps(tool_result, ensure_ascii=False, default=str)
-            })
+
+            for tool_call in response_message.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    tool_args = json.loads(tool_call.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    tool_args = {}
+
+                logger.info(f"Agent calling tool: {tool_name} with args: {tool_args}")
+                tool_names.append(tool_name)
+
+                tool_result = await self._execute_tool(tool_name, tool_args, student_id)
+                tool_results.append({"tool": tool_name, "data": tool_result})
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(tool_result, ensure_ascii=False, default=str)
+                })
+
+            tool_used = ", ".join(tool_names)
+            tool_data = tool_results[0]["data"] if len(tool_results) == 1 else tool_results
 
             # Second LLM call — generate human-readable response
             try:
@@ -288,7 +293,13 @@ class SDUAgent:
                 answer = final_response.choices[0].message.content
             except Exception as e:
                 logger.error(f"Groq final call error: {e}")
-                answer = self._format_tool_response(tool_name, tool_result)
+                if len(tool_results) == 1:
+                    answer = self._format_tool_response(tool_results[0]["tool"], tool_results[0]["data"])
+                else:
+                    answer = "\n\n".join(
+                        self._format_tool_response(result["tool"], result["data"])
+                        for result in tool_results
+                    )
 
         else:
             # No tool needed — direct answer
