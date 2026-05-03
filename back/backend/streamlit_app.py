@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 st.set_page_config(
     page_title="SDU AI Assistant",
     page_icon="🎓",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="collapsed",
 )
 
@@ -343,9 +343,8 @@ def inject_css():
         }
 
         .main .block-container {
-            width: calc(100vw - 64px);
-            max-width: calc(100vw - 64px);
-            padding: 2rem 2rem 7rem;
+            max-width: 760px;
+            padding: 1.2rem 1rem 5rem;
         }
 
         [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer {
@@ -531,7 +530,7 @@ def inject_css():
             left: 50%;
             bottom: 16px;
             transform: translateX(-50%);
-            width: min(1320px, calc(100% - 48px));
+            width: min(720px, calc(100% - 24px));
             background: rgba(24,28,39,.96);
             border: 1px solid var(--border);
             border-radius: 18px;
@@ -566,7 +565,7 @@ def inject_css():
         }
 
         [data-testid="stChatInput"] {
-            width: min(1320px, calc(100% - 48px));
+            width: min(720px, calc(100% - 24px));
             left: 50%;
             transform: translateX(-50%);
         }
@@ -576,7 +575,7 @@ def inject_css():
         }
 
         @media (max-width: 520px) {
-            .main .block-container { width: 100%; max-width: 100%; padding-left: 1rem; padding-right: 1rem; }
+            .main .block-container { padding-left: .85rem; padding-right: .85rem; }
             .title { font-size: 18px; }
             .stRadio [role="radiogroup"] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
             .stRadio label p { font-size: 11px; }
