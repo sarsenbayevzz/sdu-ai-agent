@@ -669,7 +669,7 @@ def inject_css():
             font-size: 11px;
         }
         
-        div[data-testid="stRadio"]:first-of-type {
+        .top-nav {
             position: fixed;
             top: 12px;
             left: 50%;
@@ -677,30 +677,25 @@ def inject_css():
             width: min(720px, calc(100% - 24px));
             z-index: 999;
 
+            display: flex;
+            gap: 8px;
+
             background: rgba(24,28,39,.96);
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 8px;
 
             backdrop-filter: blur(14px);
-            box-shadow: 0 8px 30px rgba(0,0,0,.32);
-        }
-
-        /* layout внутри nav */
-        div[data-testid="stRadio"]:first-of-type [role="radiogroup"] {
-            display: flex !important;
-            flex-wrap: nowrap !important;
-            justify-content: space-between;
-            gap: 8px;
         }
 
         /* кнопки */
-        div[data-testid="stRadio"]:first-of-type label {
-            flex: 1;
-            text-align: center;
+        .top-nav button {
+            border-radius: 12px !important;
+            background: var(--bg-elevated) !important;
+            border: 1px solid var(--border) !important;
         }
 
-        /* OFFSET CONTENT */
+        /* отступ */
         .main .block-container {
             margin-top: 90px !important;
         }
@@ -904,24 +899,18 @@ def seed_chat():
 
 
 def nav():
-    labels = {
-        "Chat": "Chat",
-        "Schedule": "Schedule",
-        "Assignments": "Assignments",
-        "Attendance": "Attendance",
-        "Profile": "Profile",
-    }
-    st.markdown('<div class="nav-wrapper">', unsafe_allow_html=True)
-    selected = st.radio(
-        "Navigation",
-        options=list(labels.keys()),
-        format_func=labels.get,
-        key="nav",
-        label_visibility="collapsed",
-        horizontal=True,
-    )
+    labels = ["Chat", "Schedule", "Assignments", "Attendance", "Profile"]
+
+    st.markdown('<div class="top-nav">', unsafe_allow_html=True)
+
+    cols = st.columns(len(labels))
+    for i, label in enumerate(labels):
+        if cols[i].button(label, use_container_width=True):
+            st.session_state.nav = label
+
     st.markdown('</div>', unsafe_allow_html=True)
-    return selected
+
+    return st.session_state.get("nav", "Chat")
 
 
 def render_chat():
