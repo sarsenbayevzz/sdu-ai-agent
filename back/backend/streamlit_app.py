@@ -916,13 +916,15 @@ def nav():
         </button>
         """
 
-    st.markdown(f"""
-    <div class="top-nav">
-        {buttons_html}
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="top-nav">
+            {buttons_html}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    # читаем из URL
     nav_from_url = st.query_params.get("nav")
     if nav_from_url:
         st.session_state.nav = nav_from_url
