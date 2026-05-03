@@ -1167,25 +1167,10 @@ def render_attendance():
         else:
             st.info("Portal did not return attendance data, so the app used fallback data.")
 
-    overall = data.get("overall_percentage", 0)
-    absense = 100 - overall
-    status_class = "green" if absense >= 10 else "yellow" if absense >= 20 else "red"
-    cols = st.columns([1, 2])
-    with cols[0]:
-        st.markdown(
-            f"""
-                <div class="metric-card">
-                    <div class="metric-value {status_class}">{absense:.0f}%</div>
-                    <div class="metric-label">Overall</div>
-                </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with cols[1]:
-        if data.get("has_issues"):
-            st.warning(f"The SDU maximum absense is 30%. Low attendance in {len(data.get('low_attendance_courses', []))} course(s).")
-        else:
-            st.success("Everything looks good.")
+    if data.get("has_issues"):
+        st.warning(f"The SDU maximum absense is 30%. Low attendance in {len(data.get('low_attendance_courses', []))} course(s).")
+    else:
+        st.success("Everything looks good.")
 
     courses = sorted(data.get("courses", []), key=lambda c: c.get("percentage", 0))
     if not courses:
@@ -1194,8 +1179,8 @@ def render_attendance():
 
     for course in courses:
         pct = 100 - course.get("percentage", 0)
-        kind = "green" if pct >= 10 else "yellow" if pct >= 20 else "red"
-        label = "Good" if pct >= 10 else "Warning" if pct >= 20 else "Critical"
+        kind = "green" if pct <= 10 else "yellow" if pct <= 20 else "red" if pct <= 30 else "dark-red"
+        label = "Good" if pct <= 10 else "Warning" if pct <= 20 else "Critical" if pct <= 30 else "Retake"
         st.markdown(
             f"""
             <div class="attendance-card" style="border-color:{'var(--border)' if kind == 'green' else 'rgba(251,191,36,.32)' if kind == 'yellow' else 'rgba(248,113,113,.35)'};">
