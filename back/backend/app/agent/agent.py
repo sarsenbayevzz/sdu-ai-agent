@@ -197,7 +197,7 @@ class SDUAgent:
         chat_history = chat_history or []
         if not message:
             return {
-                "response": "Напиши вопрос про расписание, задания, дедлайны или посещаемость.",
+                "response": "Ask a question about schedule, assignments, deadlines, or attendance.",
                 "tool_used": None,
                 "data": None
             }
@@ -235,7 +235,7 @@ class SDUAgent:
         except Exception as e:
             logger.error(f"Groq first call error: {e}")
             fallback = await self._rule_based_response(message, student_id)
-            fallback["response"] = f"{fallback['response']}\n\nAI временно недоступен, поэтому я ответил по данным приложения."
+            fallback["response"] = f"{fallback['response']}\n\nAI is temporarily unavailable, so I answered using app data."
             return fallback
 
         response_message = response.choices[0].message
@@ -293,17 +293,15 @@ class SDUAgent:
                 answer = final_response.choices[0].message.content
             except Exception as e:
                 logger.error(f"Groq final call error: {e}")
-                if len(tool_results) == 1:
-                    answer = self._format_tool_response(tool_results[0]["tool"], tool_results[0]["data"])
-                else:
-                    answer = "\n\n".join(
-                        self._format_tool_response(result["tool"], result["data"])
-                        for result in tool_results
-                    )
+                answer = self._format_tool_results(tool_results)
+
+            if self._looks_like_tool_markup(answer):
+                logger.warning("LLM returned tool markup after tool execution; using deterministic formatter")
+                answer = self._format_tool_results(tool_results)
 
         else:
             # No tool needed — direct answer
-            answer = response_message.content or "Я могу помочь с расписанием, заданиями, дедлайнами и посещаемостью."
+            answer = response_message.content or "I can help with schedule, assignments, deadlines, and attendance."
 
         return {
             "response": answer,
@@ -355,12 +353,12 @@ class SDUAgent:
         if not intent:
             return {
                 "response": (
-                    "Я могу быстро помочь с академическими данными:\n"
-                    "• расписание сегодня, завтра или на неделю\n"
-                    "• следующая пара\n"
-                    "• задания и дедлайны\n"
-                    "• посещаемость и рисковые курсы\n\n"
-                    "Например: «Какая следующая пара?» или «Что по посещаемости?»"
+                    "I can help with academic data:\n"
+                    "• schedule for today, tomorrow, or the week\n"
+                    "• next class\n"
+                    "• assignments and deadlines\n"
+                    "• attendance and risky courses\n\n"
+                    "For example: \"What is my next class?\" or \"Any attendance risks?\""
                 ),
                 "tool_used": None,
                 "data": None,
@@ -392,71 +390,95 @@ class SDUAgent:
             return "get_assignments", {"days": days, "include_submitted": False}
         return None, {}
 
+    def _looks_like_tool_markup(self, answer: str | None) -> bool:
+        if not answer:
+            return True
+        text = answer.lower()
+        markers = (
+            "<function>",
+            "</function>",
+            "get_attendance_status(",
+            "get_attendance(",
+            "get_assignments(",
+            "get_deadlines(",
+            "get_schedule",
+            "tool_call",
+        )
+        return any(marker in text for marker in markers)
+
+    def _format_tool_results(self, tool_results: List[Dict[str, Any]]) -> str:
+        if len(tool_results) == 1:
+            return self._format_tool_response(tool_results[0]["tool"], tool_results[0]["data"])
+        return "\n\n".join(
+            self._format_tool_response(result["tool"], result["data"])
+            for result in tool_results
+        )
+
     def _format_tool_response(self, tool_name: str, data: Any) -> str:
         if not data:
-            return "Данных пока нет. Попробуй нажать «Обновить данные»."
+            return "No data is loaded yet. Try pressing Refresh data."
         if isinstance(data, dict) and data.get("error"):
-            return f"Не получилось получить данные: {data['error']}"
+            return f"Could not get the data: {data['error']}"
 
         if tool_name in {"get_assignments", "get_deadlines"}:
             assignments = data.get("assignments", []) if isinstance(data, dict) else []
             if not assignments:
-                return "Активных заданий в выбранном периоде нет."
-            lines = ["Ближайшие задания:"]
+                return "There are no active assignments in the selected period."
+            lines = ["Upcoming assignments:"]
             for item in assignments[:8]:
-                status = "сдано" if item.get("submitted") else f"через {item.get('days_left', '?')} дн."
-                lines.append(f"• {item.get('title', 'Assignment')} — {item.get('course_name', '')}, {status}")
+                status = "submitted" if item.get("submitted") else f"in {item.get('days_left', '?')} day(s)"
+                lines.append(f"• {item.get('title', 'Assignment')} - {item.get('course_name', '')}, {status}")
             return "\n".join(lines)
 
         if tool_name == "get_next_class":
             if not data.get("course_name"):
-                return data.get("message", "Ближайших пар не найдено.")
-            when = "сегодня" if data.get("is_today") else "завтра" if data.get("is_tomorrow") else data.get("day", "")
+                return data.get("message", "No upcoming classes found.")
+            when = "today" if data.get("is_today") else "tomorrow" if data.get("is_tomorrow") else data.get("day", "")
             return (
-                f"Следующая пара {when}:\n"
+                f"Next class {when}:\n"
                 f"{data.get('course_name')} ({data.get('class_type', 'Class')})\n"
-                f"{data.get('start_time')}–{data.get('end_time')}, аудитория {data.get('room') or 'не указана'}\n"
-                f"Преподаватель: {data.get('teacher') or 'не указан'}"
+                f"{data.get('start_time')}-{data.get('end_time')}, room {data.get('room') or 'not specified'}\n"
+                f"Teacher: {data.get('teacher') or 'not specified'}"
             )
 
         if tool_name in {"get_schedule_today", "get_schedule_tomorrow", "get_schedule_by_day"}:
             classes = data.get("classes", []) if isinstance(data, dict) else []
             if not classes:
-                return f"На {data.get('day', 'этот день')} пар нет."
-            lines = [f"Расписание на {data.get('day', 'день')}:"]
+                return f"No classes for {data.get('day', 'this day')}."
+            lines = [f"Schedule for {data.get('day', 'the day')}:"]
             for cls in classes:
-                lines.append(f"• {cls.get('start_time')}–{cls.get('end_time')} {cls.get('course_name')} · {cls.get('room', '')}")
+                lines.append(f"• {cls.get('start_time')}-{cls.get('end_time')} {cls.get('course_name')} · {cls.get('room', '')}")
             return "\n".join(lines)
 
         if tool_name == "get_full_schedule":
             schedule = data.get("schedule", {}) if isinstance(data, dict) else {}
             if not schedule:
-                return "Расписание пока не загружено."
-            lines = ["Расписание на неделю:"]
+                return "Schedule is not loaded yet."
+            lines = ["Weekly schedule:"]
             for day, classes in schedule.items():
                 if not classes:
                     continue
                 lines.append(f"\n{day}:")
                 for cls in classes[:5]:
-                    lines.append(f"• {cls.get('start_time')}–{cls.get('end_time')} {cls.get('course_name')} · {cls.get('room', '')}")
+                    lines.append(f"• {cls.get('start_time')}-{cls.get('end_time')} {cls.get('course_name')} · {cls.get('room', '')}")
             return "\n".join(lines)
 
         if tool_name == "get_attendance":
             courses = data.get("courses", []) if isinstance(data, dict) else []
             if not courses:
-                return "Данных по посещаемости пока нет."
+                return "No attendance data is loaded yet."
             overall = data.get("overall_percentage", 0)
             low = [c for c in courses if c.get("percentage", 100) < 75]
-            lines = [f"Общая посещаемость: {overall:.1f}%"]
+            lines = [f"Overall attendance: {overall:.1f}%"]
             if low:
-                lines.append("Курсы в зоне риска:")
+                lines.append("Courses at risk:")
                 for course in low[:6]:
                     lines.append(
-                        f"• {course.get('course_name')} — {course.get('percentage', 0):.1f}% "
+                        f"• {course.get('course_name')} - {course.get('percentage', 0):.1f}% "
                         f"({course.get('attended', 0)}/{course.get('total', 0)})"
                     )
             else:
-                lines.append("Критичных курсов ниже 75% нет.")
+                lines.append("No courses are below the 75% threshold.")
             return "\n".join(lines)
 
-        return "Данные получены, но я пока не умею красиво форматировать этот тип ответа."
+        return "The data was loaded, but I cannot format this response type yet."
