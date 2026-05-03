@@ -1175,7 +1175,7 @@ def render_attendance():
         st.markdown(
             f"""
                 <div class="metric-card">
-                    <div class="metric-value {status_class}">{absense}%</div>
+                    <div class="metric-value {status_class}">{absense:.0f}%</div>
                     <div class="metric-label">Overall</div>
                 </div>
             """,
@@ -1183,7 +1183,7 @@ def render_attendance():
         )
     with cols[1]:
         if data.get("has_issues"):
-            st.warning(f"The SDU minimum attendance is 75%. Low attendance in {len(data.get('low_attendance_courses', []))} course(s).")
+            st.warning(f"The SDU maximum absense is 30%. Low attendance in {len(data.get('low_attendance_courses', []))} course(s).")
         else:
             st.success("Everything looks good.")
 
@@ -1193,9 +1193,9 @@ def render_attendance():
         return
 
     for course in courses:
-        pct = course.get("percentage", 0)
-        kind = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
-        label = "Good" if pct >= 75 else "Warning" if pct >= 50 else "Critical"
+        pct = 100 - course.get("percentage", 0)
+        kind = "green" if pct >= 10 else "yellow" if pct >= 20 else "red"
+        label = "Good" if pct >= 10 else "Warning" if pct >= 20 else "Critical"
         st.markdown(
             f"""
             <div class="attendance-card" style="border-color:{'var(--border)' if kind == 'green' else 'rgba(251,191,36,.32)' if kind == 'yellow' else 'rgba(248,113,113,.35)'};">
@@ -1205,7 +1205,7 @@ def render_attendance():
                         <div class="secondary" style="font-size:13px;margin-top:5px;">{course.get("attended", 0)}/{course.get("total", 0)} classes · missed {course.get("missed", 0)}</div>
                     </div>
                     <div style="text-align:right;">
-                        <div class="{kind}" style="font-size:22px;font-weight:700;line-height:1;">{pct:.1f}%</div>
+                        <div class="{kind}" style="font-size:22px;font-weight:700;line-height:1;">{pct:.0f}%</div>
                         <div style="margin-top:6px;">{badge(label, kind)}</div>
                     </div>
                 </div>
