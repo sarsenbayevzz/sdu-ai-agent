@@ -684,6 +684,12 @@ def inject_css():
             box-shadow: 0 8px 30px rgba(0,0,0,.32);
         }
 
+        .stRadio [role="radiogroup"] {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 6px;
+        }
+
         .stRadio label {
             background: var(--bg-elevated);
             border: 1px solid var(--border);
@@ -1020,24 +1026,6 @@ def render_schedule():
             """,
             unsafe_allow_html=True,
         )
-        
-    st.markdown("""
-    <style>
-    div[role="radiogroup"] {
-        display: flex !important;
-        flex-wrap: nowrap !important;
-        overflow-x: auto;
-        gap: 10px;
-        justify-content: flex-start;  /* лучше чем center */
-        padding-left: 6px;
-        margin-bottom: 10px;
-    }
-
-    div[role="radiogroup"] > label {
-        flex: 0 0 auto;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
     default_day = today if today in DAYS else "Monday"
     active_day = st.radio(
