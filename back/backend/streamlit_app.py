@@ -669,7 +669,7 @@ def inject_css():
             font-size: 11px;
         }
         
-        div[data-testid="stHorizontalBlock"] {
+        .top-nav {
             position: fixed;
             top: 12px;
             left: 50%;
@@ -677,21 +677,25 @@ def inject_css():
             width: min(720px, calc(100% - 24px));
             z-index: 999;
 
+            display: flex;
+            gap: 8px;
+
             background: rgba(24,28,39,.96);
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 8px;
+
             backdrop-filter: blur(14px);
         }
 
-        /* кнопки внутри */
-        div[data-testid="stHorizontalBlock"] button {
+        /* кнопки */
+        .top-nav button {
             border-radius: 12px !important;
             background: var(--bg-elevated) !important;
             border: 1px solid var(--border) !important;
         }
 
-        /* отступ сверху */
+        /* отступ */
         .main .block-container {
             margin-top: 90px !important;
         }
@@ -897,10 +901,14 @@ def seed_chat():
 def nav():
     labels = ["Chat", "Schedule", "Assignments", "Attendance", "Profile"]
 
+    st.markdown('<div class="top-nav">', unsafe_allow_html=True)
+
     cols = st.columns(len(labels))
     for i, label in enumerate(labels):
         if cols[i].button(label, use_container_width=True):
             st.session_state.nav = label
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     return st.session_state.get("nav", "Chat")
 
