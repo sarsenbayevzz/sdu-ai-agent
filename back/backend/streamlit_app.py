@@ -669,7 +669,7 @@ def inject_css():
             font-size: 11px;
         }
         
-        .nav-wrapper div[data-testid="stRadio"] {
+        div[data-testid="stRadio"]:first-of-type {
             position: fixed;
             top: 12px;
             left: 50%;
@@ -686,14 +686,16 @@ def inject_css():
             box-shadow: 0 8px 30px rgba(0,0,0,.32);
         }
 
-        .nav-wrapper [role="radiogroup"] {
+        /* layout внутри nav */
+        div[data-testid="stRadio"]:first-of-type [role="radiogroup"] {
             display: flex !important;
             flex-wrap: nowrap !important;
             justify-content: space-between;
             gap: 8px;
         }
 
-        .nav-wrapper label {
+        /* кнопки */
+        div[data-testid="stRadio"]:first-of-type label {
             flex: 1;
             text-align: center;
         }
