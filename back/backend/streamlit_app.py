@@ -669,7 +669,7 @@ def inject_css():
             font-size: 11px;
         }
         
-        div[data-testid="stRadio"] {
+        .nav-wrapper div[data-testid="stRadio"] {
             position: fixed;
             top: 12px;
             left: 50%;
@@ -686,29 +686,16 @@ def inject_css():
             box-shadow: 0 8px 30px rgba(0,0,0,.32);
         }
 
-        /* RADIO GROUP LAYOUT */
-        div[data-testid="stRadio"] [role="radiogroup"] {
+        .nav-wrapper [role="radiogroup"] {
             display: flex !important;
             flex-wrap: nowrap !important;
             justify-content: space-between;
             gap: 8px;
         }
 
-        /* BUTTONS */
-        div[data-testid="stRadio"] label {
+        .nav-wrapper label {
             flex: 1;
             text-align: center;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 8px 6px;
-            min-height: 42px;
-        }
-
-        /* TEXT */
-        div[data-testid="stRadio"] label p {
-            font-size: 13px;
-            font-weight: 600;
         }
 
         /* OFFSET CONTENT */
@@ -922,7 +909,7 @@ def nav():
         "Attendance": "Attendance",
         "Profile": "Profile",
     }
-    st.markdown('<div class="bottom-nav">', unsafe_allow_html=True)
+    st.markdown('<div class="nav-wrapper">', unsafe_allow_html=True)
     selected = st.radio(
         "Navigation",
         options=list(labels.keys()),
@@ -931,7 +918,7 @@ def nav():
         label_visibility="collapsed",
         horizontal=True,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     return selected
 
 
