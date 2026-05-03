@@ -1027,8 +1027,23 @@ def render_schedule():
             unsafe_allow_html=True,
         )
         
-    st.markdown("""<style>div[role="radiogroup"] {display:flex !important;'flex-wrap: nowrap !important;overflow-x: auto;gap: 8px;justify-content: center;}
-                div[role="radiogroup"] > label {'flex: 0 0 auto;}</style>""", unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    div[role="radiogroup"] {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        gap: 10px;
+        justify-content: flex-start;  /* лучше чем center */
+        padding-left: 6px;
+        margin-bottom: 10px;
+    }
+
+    div[role="radiogroup"] > label {
+        flex: 0 0 auto;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     default_day = today if today in DAYS else "Monday"
     active_day = st.radio(
