@@ -1168,13 +1168,14 @@ def render_attendance():
             st.info("Portal did not return attendance data, so the app used fallback data.")
 
     overall = data.get("overall_percentage", 0)
-    status_class = "green" if overall >= 75 else "yellow" if overall >= 50 else "red"
+    absense = 100 - overall
+    status_class = "green" if absense >= 10 else "yellow" if absense >= 20 else "red"
     cols = st.columns([1, 2])
     with cols[0]:
         st.markdown(
             f"""
                 <div class="metric-card">
-                    <div class="metric-value {status_class}">{overall:.1f}%</div>
+                    <div class="metric-value {status_class}">{absense}%</div>
                     <div class="metric-label">Overall</div>
                 </div>
             """,
