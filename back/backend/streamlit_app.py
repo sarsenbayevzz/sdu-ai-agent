@@ -669,16 +669,13 @@ def inject_css():
             font-size: 11px;
         }
         
-        .top-nav {
+        section.main > div:first-child div[data-testid="stHorizontalBlock"] {
             position: fixed;
             top: 12px;
             left: 50%;
             transform: translateX(-50%);
             width: min(720px, calc(100% - 24px));
             z-index: 999;
-
-            display: flex;
-            gap: 8px;
 
             background: rgba(24,28,39,.96);
             border: 1px solid var(--border);
@@ -688,21 +685,17 @@ def inject_css():
             backdrop-filter: blur(14px);
         }
 
-        .nav-btn {
-            flex: 1;
-            border-radius: 12px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            font-weight: 600;
-            padding: 10px 6px;
-            cursor: pointer;
+        /* кнопки внутри */
+        div[data-testid="stHorizontalBlock"] button {
+            border-radius: 12px !important;
+            background: var(--bg-elevated) !important;
+            border: 1px solid var(--border) !important;
         }
 
-        .nav-btn.active {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
+        /* активная кнопка */
+        button[kind="secondary"]:focus {
+            background: var(--accent) !important;
+            color: white !important;
         }
 
         .stRadio label {
@@ -907,27 +900,11 @@ def nav():
     labels = ["Chat", "Schedule", "Assignments", "Attendance", "Profile"]
     current = st.session_state.get("nav", "Chat")
 
-    buttons_html = ""
-    for label in labels:
-        active = "active" if label == current else ""
-        buttons_html += f"""
-        <button class="nav-btn {active}" onclick="window.location.search='?nav={label}'">
-            {label}
-        </button>
-        """
+    cols = st.columns(len(labels))
 
-    st.markdown(
-        f"""
-        <div class="top-nav">
-            {buttons_html}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    nav_from_url = st.query_params.get("nav")
-    if nav_from_url:
-        st.session_state.nav = nav_from_url
+    for i, label in enumerate(labels):
+        if cols[i].button(label, key=f"nav_{label}", use_container_width=True):
+            st.session_state.nav = label
 
     return st.session_state.get("nav", "Chat")
 
