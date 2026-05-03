@@ -669,30 +669,51 @@ def inject_css():
             font-size: 11px;
         }
         
-        .main .block-container {
-            margin-top: 80px;  /* подгони под высоту nav */
-        }
-
-        .bottom-nav {
+        div[data-testid="stRadio"] {
             position: fixed;
             top: 12px;
             left: 50%;
-            bottom: 16px;
             transform: translateX(-50%);
             width: min(720px, calc(100% - 24px));
+            z-index: 999;
+
             background: rgba(24,28,39,.96);
             border: 1px solid var(--border);
-            border-radius: 18px;
+            border-radius: 16px;
             padding: 8px;
+
             backdrop-filter: blur(14px);
-            z-index: 999;
             box-shadow: 0 8px 30px rgba(0,0,0,.32);
         }
 
-        .stRadio [role="radiogroup"] {
-            display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
-            gap: 6px;
+        /* RADIO GROUP LAYOUT */
+        div[data-testid="stRadio"] [role="radiogroup"] {
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        /* BUTTONS */
+        div[data-testid="stRadio"] label {
+            flex: 1;
+            text-align: center;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 8px 6px;
+            min-height: 42px;
+        }
+
+        /* TEXT */
+        div[data-testid="stRadio"] label p {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* OFFSET CONTENT */
+        .main .block-container {
+            margin-top: 90px !important;
         }
 
         .stRadio label {
