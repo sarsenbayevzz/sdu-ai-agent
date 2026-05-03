@@ -1,5 +1,9 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import html
+import json
 import os
 import sys
 from collections.abc import Mapping
@@ -14,7 +18,7 @@ from dotenv import load_dotenv
 st.set_page_config(
     page_title="SDU AI Assistant",
     page_icon="🎓",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -56,20 +60,39 @@ from app.agent.data_service import DataService, PORTAL_SESSIONS
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 DAY_LABELS = {
-    "Monday": "Пн",
-    "Tuesday": "Вт",
-    "Wednesday": "Ср",
-    "Thursday": "Чт",
-    "Friday": "Пт",
-    "Saturday": "Сб",
+    "Monday": "Mon",
+    "Tuesday": "Tue",
+    "Wednesday": "Wed",
+    "Thursday": "Thu",
+    "Friday": "Fri",
+    "Saturday": "Sat",
 }
 DAY_FULL = {
-    "Monday": "Понедельник",
-    "Tuesday": "Вторник",
-    "Wednesday": "Среда",
-    "Thursday": "Четверг",
-    "Friday": "Пятница",
-    "Saturday": "Суббота",
+    "Monday": "Monday",
+    "Tuesday": "Tuesday",
+    "Wednesday": "Wednesday",
+    "Thursday": "Thursday",
+    "Friday": "Friday",
+    "Saturday": "Saturday",
+}
+
+SESSION_QUERY_KEY = "sdu_session"
+SESSION_SAFE_FIELDS = {
+    "student_id",
+    "name",
+    "firstname",
+    "lastname",
+    "fullname_native",
+    "username",
+    "email",
+    "avatar",
+    "portal_photo_url",
+    "program",
+    "advisor",
+    "birth_date",
+    "status",
+    "grant_type",
+    "year",
 }
 
 
@@ -94,6 +117,65 @@ def run_async(coro):
         new_loop.close()
 
 
+def session_secret() -> bytes:
+    secret = (
+        os.getenv("STREAMLIT_SESSION_SECRET")
+        or os.getenv("JWT_SECRET")
+        or os.getenv("GROQ_API_KEY")
+        or "sdu-ai-agent-local-session"
+    )
+    return secret.encode("utf-8")
+
+
+def sign_payload(payload: str) -> str:
+    return hmac.new(session_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def encode_session(student: dict) -> str:
+    safe_student = {key: value for key, value in student.items() if key in SESSION_SAFE_FIELDS and value}
+    payload = json.dumps(safe_student, ensure_ascii=False, separators=(",", ":"))
+    encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"{encoded}.{sign_payload(encoded)}"
+
+
+def decode_session(token: str) -> dict:
+    if not token or "." not in token:
+        return {}
+    encoded, signature = token.rsplit(".", 1)
+    if not hmac.compare_digest(sign_payload(encoded), signature):
+        return {}
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        data = json.loads(payload)
+        if isinstance(data, dict) and data.get("student_id"):
+            return data
+    except Exception:
+        return {}
+    return {}
+
+
+def persist_student_session(student: dict):
+    st.query_params[SESSION_QUERY_KEY] = encode_session(student)
+
+
+def clear_student_session():
+    if SESSION_QUERY_KEY in st.query_params:
+        del st.query_params[SESSION_QUERY_KEY]
+
+
+def restore_student_session():
+    if st.session_state.get("student"):
+        return
+    token = st.query_params.get(SESSION_QUERY_KEY, "")
+    if isinstance(token, list):
+        token = token[0] if token else ""
+    student = decode_session(token)
+    if student:
+        st.session_state.student = student
+        st.session_state.restored_session = True
+
+
 def init_state():
     defaults = {
         "student": None,
@@ -104,6 +186,7 @@ def init_state():
         "needs_2fa": False,
         "pending_student_id": "",
         "pending_moodle_password": "",
+        "restored_session": False,
         "nav": "Chat",
         "last_error": "",
     }
@@ -206,7 +289,7 @@ def refresh_page_cache():
 
 def get_page_cache():
     if not st.session_state.data_cache:
-        with st.spinner("Загружаем данные с портала..."):
+        with st.spinner("Loading data from the portal..."):
             refresh_page_cache()
     return st.session_state.data_cache
 
@@ -216,12 +299,14 @@ def render_refresh_bar():
     col1, col2 = st.columns([2, 1])
     with col1:
         if loaded_at:
-            st.caption(f"Данные загружены: {loaded_at}")
+            st.caption(f"Data loaded: {loaded_at}")
         else:
-            st.caption("Данные ещё не загружены")
+            st.caption("Data has not been loaded yet")
+        if st.session_state.get("restored_session") and not PORTAL_SESSIONS.get(student_id()):
+            st.caption("Account restored after refresh. Live portal data may require logging in again with the portal password.")
     with col2:
-        if st.button("Обновить данные", key="refresh_all_data"):
-            with st.spinner("Обновляем все страницы..."):
+        if st.button("Refresh data", key="refresh_all_data"):
+            with st.spinner("Refreshing all pages..."):
                 refresh_page_cache()
             st.rerun()
 
@@ -258,8 +343,9 @@ def inject_css():
         }
 
         .main .block-container {
-            max-width: 760px;
-            padding: 1.2rem 1rem 5rem;
+            width: calc(100vw - 64px);
+            max-width: calc(100vw - 64px);
+            padding: 2rem 2rem 7rem;
         }
 
         [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer {
@@ -301,7 +387,7 @@ def inject_css():
         .title {
             font-size: 20px;
             font-weight: 700;
-            letter-spacing: -.2px;
+            letter-spacing: 0;
             line-height: 1.1;
         }
 
@@ -445,7 +531,7 @@ def inject_css():
             left: 50%;
             bottom: 16px;
             transform: translateX(-50%);
-            width: min(720px, calc(100% - 24px));
+            width: min(1320px, calc(100% - 48px));
             background: rgba(24,28,39,.96);
             border: 1px solid var(--border);
             border-radius: 18px;
@@ -475,11 +561,27 @@ def inject_css():
             font-weight: 600;
         }
 
+        [data-testid="stCaptionContainer"], .stMarkdown, .stAlert, .stToggle, .stSlider, .stTextInput label, .stSelectbox label {
+            font-size: 14px;
+        }
+
+        [data-testid="stChatInput"] {
+            width: min(1320px, calc(100% - 48px));
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        [data-testid="stChatInput"] textarea {
+            font-size: 14px !important;
+        }
+
         @media (max-width: 520px) {
-            .main .block-container { padding-left: .85rem; padding-right: .85rem; }
+            .main .block-container { width: 100%; max-width: 100%; padding-left: 1rem; padding-right: 1rem; }
             .title { font-size: 18px; }
             .stRadio [role="radiogroup"] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
             .stRadio label p { font-size: 11px; }
+            .bottom-nav { width: calc(100% - 18px); }
+            .chat-bubble { max-width: 94%; }
         }
         </style>
         """,
@@ -523,14 +625,14 @@ def badge(text: str, kind: str = "blue") -> str:
 
 
 def render_login():
-    header("SDU AI Assistant", "Войди через свой студенческий аккаунт")
+    header("SDU AI Assistant", "Sign in with your student account")
     st.markdown(
         """
         <div class="card" style="text-align:center;">
             <div style="font-size:44px;margin-bottom:8px;">🎓</div>
-            <div style="font-size:18px;font-weight:700;">Академический помощник SDU</div>
+            <div style="font-size:18px;font-weight:700;">SDU Academic Assistant</div>
             <div class="secondary" style="font-size:13px;margin-top:5px;">
-                Расписание, задания, посещаемость и AI-чат в одном Streamlit приложении.
+                Schedule, assignments, attendance, and AI chat in one Streamlit app.
             </div>
         </div>
         """,
@@ -539,21 +641,21 @@ def render_login():
 
     if not st.session_state.needs_2fa:
         with st.form("login_form"):
-            sid = st.text_input("Студенческий ID", placeholder="230103237")
-            password = st.text_input("Пароль Moodle", type="password")
+            sid = st.text_input("Student ID", placeholder="230103237")
+            password = st.text_input("Moodle password", type="password")
             portal_password = st.text_input(
-                "Пароль Портала",
+                "Portal password",
                 type="password",
-                placeholder="Необязательно, нужен для фото/программы/портала",
+                placeholder="Optional, used for photo, program, and portal data",
             )
-            submitted = st.form_submit_button("Войти", type="primary")
+            submitted = st.form_submit_button("Sign in", type="primary")
 
         if submitted:
             if not sid or not password:
-                st.error("Введите студенческий ID и пароль Moodle.")
+                st.error("Enter your student ID and Moodle password.")
                 return
 
-            with st.spinner("Проверяем аккаунт..."):
+            with st.spinner("Checking account..."):
                 student = run_async(
                     DataService().authenticate_student(
                         sid.strip(),
@@ -563,13 +665,15 @@ def render_login():
                 )
 
             if not student:
-                st.error("Неверный студенческий ID или пароль.")
+                st.error("Invalid student ID or password.")
                 return
 
             st.session_state.student = {
                 **student,
                 "student_id": student.get("student_id", sid.strip()),
             }
+            st.session_state.restored_session = False
+            persist_student_session(st.session_state.student)
             st.session_state.pending_student_id = sid.strip()
             st.session_state.pending_moodle_password = password
 
@@ -579,17 +683,17 @@ def render_login():
                 st.rerun()
 
             seed_chat()
-            with st.spinner("Загружаем данные для страниц..."):
+            with st.spinner("Loading page data..."):
                 refresh_page_cache()
             st.rerun()
 
     else:
-        st.info("Портал SDU запросил подтверждение. Проверь email или SMS.")
+        st.info("SDU Portal requested verification. Check your email or SMS.")
         with st.form("two_fa_form"):
-            code = st.text_input("Код верификации", placeholder="123456")
+            code = st.text_input("Verification code", placeholder="123456")
             col1, col2 = st.columns(2)
-            verify = col1.form_submit_button("Подтвердить", type="primary")
-            back = col2.form_submit_button("Назад")
+            verify = col1.form_submit_button("Verify", type="primary")
+            back = col2.form_submit_button("Back")
 
         if back:
             st.session_state.needs_2fa = False
@@ -597,16 +701,16 @@ def render_login():
 
         if verify:
             if not code:
-                st.error("Введите код верификации.")
+                st.error("Enter the verification code.")
                 return
 
             portal = PORTAL_SESSIONS.get(st.session_state.pending_student_id)
             if not portal:
-                st.error("Сессия 2FA не найдена. Попробуйте войти заново.")
+                st.error("2FA session not found. Try signing in again.")
                 st.session_state.needs_2fa = False
                 return
 
-            with st.spinner("Проверяем код..."):
+            with st.spinner("Checking code..."):
                 ok = run_async(portal.verify_2fa(code))
                 if ok:
                     profile = run_async(portal.get_profile()) or {}
@@ -623,13 +727,15 @@ def render_login():
                         "portal_photo_url": profile.get("photo_url", current.get("portal_photo_url", "")),
                         "portal_photo_data_uri": profile.get("photo_data_uri", current.get("portal_photo_data_uri", "")),
                     }
+                    st.session_state.restored_session = False
+                    persist_student_session(st.session_state.student)
                     st.session_state.needs_2fa = False
                     seed_chat()
-                    with st.spinner("Загружаем данные с портала..."):
+                    with st.spinner("Loading data from the portal..."):
                         refresh_page_cache()
                     st.rerun()
                 else:
-                    st.error("Неверный код верификации.")
+                    st.error("Invalid verification code.")
 
 
 def seed_chat():
@@ -638,20 +744,20 @@ def seed_chat():
     student = st.session_state.get("student") or {}
     first_name = (student.get("name") or "").split(" ")[0]
     greeting = (
-        f"Привет{', ' + first_name if first_name else ''}!\n\n"
-        "Я помогу быстро разобраться с учёбой: расписание, следующая пара, дедлайны, задания и посещаемость. "
-        "Данные беру из уже загруженного кэша, поэтому переключение страниц и чат не должны заново парсить портал."
+        f"Hi{', ' + first_name if first_name else ''}!\n\n"
+        "I can help you quickly understand your studies: schedule, next class, deadlines, assignments, and attendance. "
+        "I use the already loaded cache, so switching pages and chatting should not parse the portal again."
     )
     st.session_state.chat_messages = [{"role": "assistant", "text": greeting}]
 
 
 def nav():
     labels = {
-        "Chat": "Чат",
-        "Schedule": "Расписание",
-        "Assignments": "Задания",
-        "Attendance": "Посещаемость",
-        "Profile": "Профиль",
+        "Chat": "Chat",
+        "Schedule": "Schedule",
+        "Assignments": "Assignments",
+        "Attendance": "Attendance",
+        "Profile": "Profile",
     }
     st.markdown('<div class="bottom-nav">', unsafe_allow_html=True)
     selected = st.radio(
@@ -667,16 +773,16 @@ def nav():
 
 
 def render_chat():
-    header("SDU AI Assistant", "онлайн")
+    header("SDU AI Assistant", "online")
     seed_chat()
 
     suggestions = [
-        "Какая следующая пара?",
-        "Что срочно сдать?",
-        "Моё расписание сегодня",
-        "Какие риски по посещаемости?",
-        "Покажи расписание на неделю",
-        "Какие задания на этой неделе?",
+        "What is my next class?",
+        "What is urgent to submit?",
+        "My schedule for today",
+        "Any attendance risks?",
+        "Show my weekly schedule",
+        "Which assignments are due this week?",
     ]
 
     cache = get_page_cache()
@@ -687,9 +793,9 @@ def render_chat():
         <div class="card" style="padding:12px 14px;">
             <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
                 <div>
-                    <div style="font-size:13px;font-weight:700;">Контекст чата готов</div>
+                    <div style="font-size:13px;font-weight:700;">Chat context is ready</div>
                     <div class="secondary" style="font-size:12px;margin-top:3px;">
-                        Заданий в кэше: {total_assignments} · посещаемость: {attendance_source}
+                        Cached assignments: {total_assignments} · attendance: {attendance_source}
                     </div>
                 </div>
                 <div>{badge("cache", "green")}</div>
@@ -700,11 +806,11 @@ def render_chat():
     )
 
     col_clear, col_hint = st.columns([1, 2])
-    if col_clear.button("Очистить чат"):
+    if col_clear.button("Clear chat"):
         st.session_state.chat_messages = []
         seed_chat()
         st.rerun()
-    col_hint.caption("Подсказки ниже отвечают по загруженным данным без повторного парсинга.")
+    col_hint.caption("Suggestions below use loaded data without parsing the portal again.")
 
     cols = st.columns(2)
     for index, text in enumerate(suggestions):
@@ -724,7 +830,7 @@ def render_chat():
                 unsafe_allow_html=True,
             )
 
-    prompt = st.chat_input("Напиши вопрос...")
+    prompt = st.chat_input("Ask a question...")
     if prompt:
         send_message(prompt)
         st.rerun()
@@ -741,12 +847,12 @@ def send_message(text: str):
     ][-8:]
 
     try:
-        with st.spinner("Думаю..."):
+        with st.spinner("Thinking..."):
             result = run_async(agent.process_message(text, student_id(), history))
         st.session_state.chat_messages.append(
             {
                 "role": "assistant",
-                "text": result.get("response") or "Не удалось получить ответ.",
+                "text": result.get("response") or "Could not get an answer.",
                 "tool_used": result.get("tool_used"),
             }
         )
@@ -754,7 +860,7 @@ def send_message(text: str):
         st.session_state.chat_messages.append(
             {
                 "role": "assistant",
-                "text": f"Ошибка AI-сервиса: {exc}",
+                "text": f"AI service error: {exc}",
             }
         )
 
@@ -762,7 +868,7 @@ def send_message(text: str):
 def render_schedule():
     today = datetime.now().strftime("%A")
     header(
-        "Расписание",
+        "Schedule",
         datetime.now().strftime("%d.%m.%Y"),
     )
     cache = get_page_cache()
@@ -770,7 +876,7 @@ def render_schedule():
     next_class = cache.get("next_class", {})
 
     if next_class.get("course_name"):
-        label = "Следующая пара" if next_class.get("is_today") else "Ближайшая пара"
+        label = "Next class" if next_class.get("is_today") else "Upcoming class"
         st.markdown(
             f"""
             <div class="card" style="border-color:rgba(79,124,255,.38);">
@@ -786,7 +892,7 @@ def render_schedule():
 
     default_day = today if today in DAYS else "Monday"
     active_day = st.radio(
-        "День недели",
+        "Weekday",
         DAYS,
         format_func=lambda day: f"{DAY_LABELS.get(day, day)} · {len(schedule_data.get(day, []))}",
         index=DAYS.index(default_day),
@@ -800,16 +906,16 @@ def render_schedule():
     )
     if not classes:
         st.markdown(
-            '<div class="card" style="text-align:center;padding:38px 20px;"><div style="font-size:34px;">🎉</div><div class="secondary" style="margin-top:8px;">Пар нет — выходной!</div></div>',
+            '<div class="card" style="text-align:center;padding:38px 20px;"><div style="font-size:34px;">🎉</div><div class="secondary" style="margin-top:8px;">No classes today.</div></div>',
             unsafe_allow_html=True,
         )
         return
 
     for cls in classes:
         kind = {
-            "Lecture": ("Лекция", "blue"),
-            "Lab": ("Лаб", "green"),
-            "Seminar": ("Семинар", "yellow"),
+            "Lecture": ("Lecture", "blue"),
+            "Lab": ("Lab", "green"),
+            "Seminar": ("Seminar", "yellow"),
         }.get(cls.get("class_type", "Lecture"), (cls.get("class_type", "Class"), "blue"))
         st.markdown(
             f"""
@@ -831,9 +937,9 @@ def render_schedule():
 
 
 def render_assignments():
-    header("Задания", "Ближайшие дедлайны")
-    include_submitted = st.toggle("Показывать сданные задания", value=False)
-    days = st.slider("Период", min_value=7, max_value=90, value=30, step=7)
+    header("Assignments", "Upcoming deadlines")
+    include_submitted = st.toggle("Show submitted assignments", value=False)
+    days = st.slider("Period", min_value=7, max_value=90, value=30, step=7)
 
     cached = get_page_cache().get("assignments", {})
     cached_assignments = cached.get("assignments", [])
@@ -853,15 +959,15 @@ def render_assignments():
 
     cols = st.columns(3)
     with cols[0]:
-        metric_card("Всего", len(assignments), "accent")
+        metric_card("Total", len(assignments), "accent")
     with cols[1]:
-        metric_card("Не сдано", len(pending), "yellow")
+        metric_card("Pending", len(pending), "yellow")
     with cols[2]:
-        metric_card("Срочно", len(urgent), "red" if urgent else "green")
+        metric_card("Urgent", len(urgent), "red" if urgent else "green")
 
     if not assignments:
         st.markdown(
-            '<div class="card" style="text-align:center;padding:38px 20px;"><div style="font-size:34px;">✅</div><div class="secondary" style="margin-top:8px;">Заданий нет.</div></div>',
+            '<div class="card" style="text-align:center;padding:38px 20px;"><div style="font-size:34px;">✅</div><div class="secondary" style="margin-top:8px;">No assignments.</div></div>',
             unsafe_allow_html=True,
         )
         return
@@ -870,19 +976,19 @@ def render_assignments():
         submitted = item.get("submitted")
         days_left = item.get("days_left", 0)
         if submitted:
-            status = badge("Сдано", "green")
+            status = badge("Submitted", "green")
             border = "var(--border)"
         elif days_left == 0:
-            status = badge("Сегодня", "red")
+            status = badge("Today", "red")
             border = "rgba(248,113,113,.35)"
         elif days_left <= 2:
-            status = badge(f"Через {days_left} дн.", "red")
+            status = badge(f"In {days_left} days", "red")
             border = "rgba(248,113,113,.35)"
         elif days_left <= 5:
-            status = badge(f"Через {days_left} дн.", "yellow")
+            status = badge(f"In {days_left} days", "yellow")
             border = "rgba(251,191,36,.30)"
         else:
-            status = badge(f"Через {days_left} дн.", "blue")
+            status = badge(f"In {days_left} days", "blue")
             border = "var(--border)"
 
         opacity = ".62" if submitted else "1"
@@ -904,7 +1010,7 @@ def render_assignments():
 
 
 def render_attendance():
-    header("Посещаемость", "Текущий семестр")
+    header("Attendance", "Current semester")
     data = get_page_cache().get("attendance", {})
 
     source = data.get("source", "unknown")
@@ -915,14 +1021,14 @@ def render_attendance():
     }
     source_label, source_kind = source_labels.get(source, ("Unknown source", "yellow"))
     st.markdown(
-        f'<div style="margin:-4px 0 12px;">{badge(f"Источник: {source_label}", source_kind)}</div>',
+        f'<div style="margin:-4px 0 18px;">{badge(f"Source: {source_label}", source_kind)}</div>',
         unsafe_allow_html=True,
     )
     if source != "portal":
         if not PORTAL_SESSIONS.get(student_id()):
-            st.info("Чтобы брать посещаемость с SDU Portal, выйдите и войдите заново, указав пароль Портала.")
+            st.info("To load attendance from SDU Portal, sign out and sign in again with the portal password.")
         else:
-            st.info("Portal не вернул данные посещаемости, поэтому приложение использовало fallback.")
+            st.info("Portal did not return attendance data, so the app used fallback data.")
 
     overall = data.get("overall_percentage", 0)
     status_class = "green" if overall >= 75 else "yellow" if overall >= 50 else "red"
@@ -930,35 +1036,35 @@ def render_attendance():
     with cols[0]:
         st.markdown(
             f"""
-            <div class="metric-card">
-                <div class="metric-value {status_class}">{overall:.1f}%</div>
-                <div class="metric-label">Общая</div>
-            </div>
+                <div class="metric-card">
+                    <div class="metric-value {status_class}">{overall:.1f}%</div>
+                    <div class="metric-label">Overall</div>
+                </div>
             """,
             unsafe_allow_html=True,
         )
     with cols[1]:
         if data.get("has_issues"):
-            st.warning(f"Минимальная посещаемость в SDU — 75%. Низкая посещаемость в {len(data.get('low_attendance_courses', []))} курс(ах).")
+            st.warning(f"The SDU minimum attendance is 75%. Low attendance in {len(data.get('low_attendance_courses', []))} course(s).")
         else:
-            st.success("Всё в порядке.")
+            st.success("Everything looks good.")
 
     courses = sorted(data.get("courses", []), key=lambda c: c.get("percentage", 0))
     if not courses:
-        st.markdown('<div class="card secondary">Нет данных по посещаемости.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card secondary">No attendance data.</div>', unsafe_allow_html=True)
         return
 
     for course in courses:
         pct = course.get("percentage", 0)
         kind = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
-        label = "Хорошо" if pct >= 75 else "Внимание" if pct >= 50 else "Критично"
+        label = "Good" if pct >= 75 else "Warning" if pct >= 50 else "Critical"
         st.markdown(
             f"""
             <div class="attendance-card" style="border-color:{'var(--border)' if kind == 'green' else 'rgba(251,191,36,.32)' if kind == 'yellow' else 'rgba(248,113,113,.35)'};">
                 <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
                     <div>
                         <div style="font-size:16px;font-weight:700;">{course.get("course_name", "")}</div>
-                        <div class="secondary" style="font-size:13px;margin-top:5px;">{course.get("attended", 0)}/{course.get("total", 0)} занятий · пропущено {course.get("missed", 0)}</div>
+                        <div class="secondary" style="font-size:13px;margin-top:5px;">{course.get("attended", 0)}/{course.get("total", 0)} classes · missed {course.get("missed", 0)}</div>
                     </div>
                     <div style="text-align:right;">
                         <div class="{kind}" style="font-size:22px;font-weight:700;line-height:1;">{pct:.1f}%</div>
@@ -979,17 +1085,17 @@ def info_row(label: str, value: Any) -> str:
 
 
 def render_profile():
-    header("Профиль", "Информация о студенте")
+    header("Profile", "Student information")
     student = st.session_state.get("student") or {}
     name = student.get("name") or "Student"
     initials = "".join(part[:1] for part in name.split()[:2]).upper() or "?"
     embedded_photo = student.get("portal_photo_data_uri") or ""
     external_photo = student.get("portal_photo_url") or student.get("avatar") or ""
     photo = embedded_photo or external_photo
-    photo_status = "встроено" if embedded_photo else "ссылка найдена" if external_photo else "не найдено"
+    photo_status = "embedded" if embedded_photo else "link found" if external_photo else "not found"
 
     avatar = (
-        f'<img src="{photo}" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid rgba(79,124,255,.38);">'
+        f'<img src="{photo}" style="width:128px;height:128px;border-radius:50%;object-fit:cover;border:3px solid rgba(79,124,255,.38);">'
         if photo
         else f'<div class="logo" style="width:96px;height:96px;border-radius:50%;font-size:32px;font-weight:700;color:white;">{initials}</div>'
     )
@@ -1004,21 +1110,23 @@ def render_profile():
         </div>
         <div class="card">
             {info_row("Student ID", student.get("student_id"))}
-            {info_row("Программа", student.get("program"))}
+            {info_row("Program", student.get("program"))}
             {info_row("Advisor", student.get("advisor"))}
             {info_row("Email", student.get("email"))}
-            {info_row("Дата рождения", student.get("birth_date"))}
-            {info_row("Грант", student.get("grant_type"))}
-            {info_row("Фото", photo_status)}
+            {info_row("Birth date", student.get("birth_date"))}
+            {info_row("Grant", student.get("grant_type"))}
+            {info_row("Photo", photo_status)}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if st.button("Выйти из аккаунта"):
+    if st.button("Sign out"):
         for key in ["student", "chat_messages", "needs_2fa", "pending_student_id", "pending_moodle_password"]:
             st.session_state[key] = None if key == "student" else "" if key.startswith("pending") else False if key == "needs_2fa" else []
+        st.session_state.restored_session = False
         clear_page_cache()
+        clear_student_session()
         st.rerun()
 
 
@@ -1026,6 +1134,7 @@ def main():
     page_config()
     inject_css()
     init_state()
+    restore_student_session()
 
     if not st.session_state.student:
         render_login()
