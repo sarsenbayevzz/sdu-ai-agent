@@ -641,12 +641,12 @@ def render_login():
 
     if not st.session_state.needs_2fa:
         with st.form("login_form"):
-            sid = st.text_input("Student ID", placeholder="230103237")
+            sid = st.text_input("Student ID", placeholder="*********")
             password = st.text_input("Moodle password", type="password")
             portal_password = st.text_input(
                 "Portal password",
                 type="password",
-                placeholder="Optional, used for photo, program, and portal data",
+                placeholder="",
             )
             submitted = st.form_submit_button("Sign in", type="primary")
 
