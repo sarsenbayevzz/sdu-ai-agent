@@ -697,6 +697,12 @@ def inject_css():
             background: var(--accent) !important;
             color: white !important;
         }
+        
+        .stRadio [role="radiogroup"] {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 6px;
+        }
 
         .stRadio label {
             background: var(--bg-elevated);
