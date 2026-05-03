@@ -668,9 +668,14 @@ def inject_css():
             color: var(--text-muted);
             font-size: 11px;
         }
+        
+        .main .block-container {
+            margin-top: 80px;  /* подгони под высоту nav */
+        }
 
         .bottom-nav {
             position: fixed;
+            top: 12px;
             left: 50%;
             bottom: 16px;
             transform: translateX(-50%);
