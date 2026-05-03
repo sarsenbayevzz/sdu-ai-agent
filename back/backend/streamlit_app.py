@@ -564,12 +564,6 @@ def inject_css():
             font-size: 14px;
         }
 
-        [data-testid="stChatInput"] {
-            width: min(720px, calc(100% - 24px));
-            left: 50%;
-            transform: translateX(-50%);
-        }
-
         [data-testid="stChatInput"] textarea {
             font-size: 14px !important;
         }
