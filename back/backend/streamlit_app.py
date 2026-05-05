@@ -1204,7 +1204,7 @@ def render_attendance():
             """,
             unsafe_allow_html=True,
         )
-        st.progress(min(max(pct / 100, 0), 1))
+        st.progress(min(max(pct / 30, 0), 1))
 
 
 def info_row(label: str, value: Any) -> str:
