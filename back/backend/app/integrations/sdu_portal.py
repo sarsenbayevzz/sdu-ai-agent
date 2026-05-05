@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import logging
 import os
 import base64
+import re
 from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
@@ -219,7 +220,9 @@ class SDUPortalClient:
 
             # Course name from label
             label = cells[2].find("label")
-            course_name = label.get_text(strip=True) if label else cells[2].get_text(strip=True)
+            course_name = self._clean_attendance_course_name(
+                label.get_text(strip=True) if label else cells[2].get_text(strip=True)
+            )
 
             # Hours, attended, absent, permitted
             try:
@@ -265,6 +268,13 @@ class SDUPortalClient:
             "overall_percentage": overall_pct,
             "term": f"{year}-{int(year)+1} term {term}",
         }
+
+    @staticmethod
+    def _clean_attendance_course_name(raw_name: str) -> str:
+        """Remove SDU Portal attendance metadata that is glued to course names."""
+        name = " ".join((raw_name or "").split())
+        name = re.sub(r"\s*\d\+\d+\+\d+.*$", "", name)
+        return name.strip()
 
     def _find_profile_photo_src(self, soup: BeautifulSoup) -> str:
         """Find the most likely student photo URL in portal HTML."""
